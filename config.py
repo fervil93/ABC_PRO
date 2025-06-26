@@ -1,17 +1,26 @@
-# Timeout para cierre automÃ¡tico de posiciones (en minutos)
+# Timeout para cierre automático de posiciones (en minutos)
 TIMEOUT_MINUTES = 99999999999
-# Apalancamiento deseado
+
+# Apalancamiento deseado (si Hyperliquid testnet lo permite por API, sino se ignora)
 LEVERAGE = 10
-# Margen (USDT) que quieres arriesgar por cada operaciÃ³n
+
+# Margen (USDT) que quieres arriesgar por cada operación
 MARGIN_PER_TRADE = 40
+
 # Multiplicador ATR para calcular TP
 ATR_TP_MULT = 1.2
-# MÃ¡ximo 2% por encima del precio de entrada para TP
+
+# Máximo 2% por encima del precio de entrada para TP
 MAX_TP_PCT = 0.02
+
 ### Notificaciones Telegram ###
 TELEGRAM_TOKEN = '7689520849:AAE7QnlgI-d5nxfBTAOQ-q8cfn0fSW1rnvQ'
 TELEGRAM_CHAT_ID = '139759956'
 NOTIFY_TRADE_OPEN = True      # Notificar cuando abre trade
 NOTIFY_TRADE_CLOSE = True     # Notificar cuando cierra trade
-NOTIFY_ERRORS = False          # Notificar errores crÃ­ticos
-NOTIFY_DAILY_SUMMARY = False   # Notificar resumen diario de operaciones
+NOTIFY_ERRORS = False         # Notificar errores críticos
+NOTIFY_DAILY_SUMMARY = False  # Notificar resumen diario de operaciones
+
+### Configuración Hyperliquid Testnet ###
+# Endpoint de la API de testnet de Hyperliquid
+API_URL = "https://api.hyperliquid-testnet.xyz"
