@@ -1,19 +1,19 @@
 import time
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from binance.client import Client
-from binance.enums import *
-from config import (
-    TIMEOUT_MINUTES,
-    LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
-)
-from secret import API_KEY, API_SECRET
-from notificaciones import enviar_telegram
 import math
 import json
 import os
 import logging
+from datetime import datetime, timedelta
+
+from config import (
+    TIMEOUT_MINUTES, LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
+)
+from secret import WALLET_ADDRESS
+from notificaciones import enviar_telegram
+
+from hyperliquid_client import HyperliquidClient  # Nuevo cliente adaptado
 
 # --- CONFIGURACIÓN LOGGING ---
 logging.basicConfig(
@@ -26,46 +26,53 @@ logging.basicConfig(
 with open("tiempo_inicio_bot.txt", "w") as f:
     f.write(datetime.now().isoformat())
 
-client = Client(API_KEY, API_SECRET)
-# No establecer FUTURES_URL manualmente, por defecto conecta a real
+client = HyperliquidClient()
 
 ATR_SL_MULT = 1.0
-
 MIN_POTENTIAL_PROFIT = 0.5
 
 # --- Parámetros por símbolo ---
 SPREAD_MAX_PCT_POR_SIMBOLO = {
-    "ADAUSDT": 1.5,
-    "LTCUSDT": 1.5,
-    "XRPUSDT": 2.0,
-    "SOLUSDT": 1.5,
-    "BNBUSDT": 1.0,
-    "ETHUSDT": 1.0,
-    "BTCUSDT": 1.0,
+    "BTC": 1.0,
+    "ETH": 1.0,
+    "BNB": 1.0,
+    "SOL": 1.5,
+    "XRP": 2.0,
+    "ADA": 1.5,
+    "DOGE": 1.5,
+    "AVAX": 1.5,
+    "TON": 1.5,
+    "LINK": 1.5,
 }
 MULTIPLICADOR_VOL_POR_SIMBOLO = {
-    "ADAUSDT": 0.8,
-    "LTCUSDT": 0.8,
-    "XRPUSDT": 0.8,
-    "SOLUSDT": 0.8,
-    "BNBUSDT": 1.0,
-    "ETHUSDT": 1.0,
-    "BTCUSDT": 1.0,
+    "BTC": 1.0,
+    "ETH": 1.0,
+    "BNB": 1.0,
+    "SOL": 0.8,
+    "XRP": 0.8,
+    "ADA": 0.8,
+    "DOGE": 0.8,
+    "AVAX": 0.8,
+    "TON": 0.8,
+    "LINK": 0.8,
 }
 BREAKOUT_ATR_MULT_POR_SIMBOLO = {
-    "ADAUSDT": 0.05,
-    "LTCUSDT": 0.05,
-    "XRPUSDT": 0.05,
-    "SOLUSDT": 0.05,
-    "BNBUSDT": 0.1,
-    "ETHUSDT": 0.1,
-    "BTCUSDT": 0.1,
+    "BTC": 0.1,
+    "ETH": 0.1,
+    "BNB": 0.1,
+    "SOL": 0.05,
+    "XRP": 0.05,
+    "ADA": 0.05,
+    "DOGE": 0.05,
+    "AVAX": 0.05,
+    "TON": 0.05,
+    "LINK": 0.05,
 }
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
 COOLDOWN_MINUTES = 15
 
-# --- Parámetros globales (por defecto para símbolos no definidos arriba) ---
+# --- Parámetros globales ---
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
 RETRY_SLEEP = 2
@@ -113,57 +120,30 @@ def guardar_niveles_atr(data):
         logging.error(f"Error guardando niveles ATR: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al guardar niveles ATR: {e}", tipo="error")
 
-def obtener_precisiones_binance(symbol):
-    info = retry_api_call(client.futures_exchange_info)
-    if not info:
-        return 2, 2
-    for s in info['symbols']:
-        if s['symbol'] == symbol:
-            step_size = None
-            price_filter = None
-            for f in s['filters']:
-                if f['filterType'] == 'LOT_SIZE':
-                    step_size = float(f['stepSize'])
-                elif f['filterType'] == 'PRICE_FILTER':
-                    price_filter = float(f['tickSize'])
-            precision_cantidad = abs(int(round(-math.log(step_size, 10)))) if step_size else 0
-            precision_precio = abs(int(round(-math.log(price_filter, 10)))) if price_filter else 0
-            return precision_precio, precision_cantidad
-    return 2, 2
-
 def ajustar_precision(valor, precision):
     return float(f"{valor:.{precision}f}") if precision > 0 else float(int(valor))
 
-def obtener_posiciones_binance():
+def obtener_posiciones_hyperliquid():
     try:
-        posiciones = retry_api_call(client.futures_position_information)
-        if posiciones is None:
+        account = retry_api_call(client.get_account)
+        if not account or "positions" not in account:
             return []
-        posiciones_abiertas = [p for p in posiciones if float(p['positionAmt']) != 0]
+        posiciones_abiertas = [p for p in account["positions"] if float(p.get('size', 0)) != 0]
         return posiciones_abiertas
     except Exception as e:
-        logging.error(f"Error al obtener posiciones Binance: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al obtener posiciones Binance: {e}", tipo="error")
+        logging.error(f"Error al obtener posiciones Hyperliquid: {e}", exc_info=True)
+        enviar_telegram(f"⚠️ Error al obtener posiciones Hyperliquid: {e}", tipo="error")
         return []
 
 def obtener_datos_historicos(symbol, interval='1m', limit=100):
     try:
-        klines = retry_api_call(client.futures_klines, symbol=symbol, interval=interval, limit=limit)
-        if not klines:
+        # Hyperliquid sólo soporta intervalos específicos, adaptar si es necesario
+        df = client.get_ohlcv(symbol, interval, limit)
+        if df is None:
             enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}.", tipo="error")
             logging.error(f"Error al obtener datos históricos para {symbol}")
             return None
-        df = pd.DataFrame(klines, columns=[
-            'timestamp', 'open', 'high', 'low', 'close', 'volume',
-            'close_time', 'quote_asset_volume', 'trades',
-            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-        ])
-        df['open'] = df['open'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
-        df['close'] = df['close'].astype(float)
-        df['volume'] = df['volume'].astype(float)
-        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+        return df
     except Exception as e:
         logging.error(f"Error al obtener datos históricos para {symbol}: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}: {e}", tipo="error")
@@ -184,7 +164,7 @@ def calcular_ema(df, n=30):
 def spread_aceptable(symbol):
     try:
         spread_limit = SPREAD_MAX_PCT_POR_SIMBOLO.get(symbol, SPREAD_MAX_PCT)
-        order_book = retry_api_call(client.futures_order_book, symbol=symbol, limit=5)
+        order_book = retry_api_call(client.get_order_book, symbol=symbol)
         if not order_book or not order_book['bids'] or not order_book['asks']:
             enviar_telegram(f"⚠️ No se pudo obtener el order book para {symbol} para evaluar spread.", tipo="error")
             logging.error(f"No se pudo obtener order book para {symbol}")
@@ -275,22 +255,11 @@ def calcular_tp_atr(entry_price, atr, direction, fee_rate=0.001):
 
 def calcular_cantidad_valida(symbol, monto_usdt):
     try:
-        info_simbolo = retry_api_call(client.futures_exchange_info)
-        if not info_simbolo:
-            return None
-        symbol_info = next((s for s in info_simbolo['symbols'] if s['symbol'] == symbol), None)
-        precio_actual = obtener_precio_futuro(symbol)
+        precio_actual = obtener_precio_hyperliquid(symbol)
         if precio_actual is None:
             return None
         cantidad_calculada = monto_usdt / precio_actual
-
-        precision_precio, precision_cantidad = obtener_precisiones_binance(symbol)
-        cantidad_ajustada = ajustar_precision(cantidad_calculada, precision_cantidad)
-        lot_size_filter = next((f for f in symbol_info['filters'] if f.get('filterType') == 'LOT_SIZE'), None)
-        step_size = float(lot_size_filter['stepSize'])
-        cantidad_ajustada = math.floor(cantidad_ajustada / step_size) * step_size
-        cantidad_ajustada = ajustar_precision(cantidad_ajustada, precision_cantidad)
-        return cantidad_ajustada
+        return cantidad_calculada
     except Exception as e:
         logging.error(f"Error al calcular cantidad válida para {symbol}: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al calcular cantidad válida para {symbol}: {e}", tipo="error")
@@ -298,10 +267,10 @@ def calcular_cantidad_valida(symbol, monto_usdt):
 
 def tiene_saldo_suficiente(margen):
     try:
-        balance = retry_api_call(client.futures_account_balance)
-        if balance is None:
+        account = retry_api_call(client.get_account)
+        if not account or "equity" not in account:
             return False
-        usdt_balance = next((float(b['balance']) for b in balance if b['asset'] == 'USDT'), 0)
+        usdt_balance = float(account["equity"])
         if usdt_balance >= margen:
             return True
         else:
@@ -313,35 +282,15 @@ def tiene_saldo_suficiente(margen):
         enviar_telegram(f"⚠️ Error verificando saldo suficiente: {e}", tipo="error")
         return False
 
-def establecer_apalancamiento(symbol, leverage):
+def ejecutar_orden_hyperliquid(symbol, side, quantity):
     try:
-        res = retry_api_call(client.futures_change_leverage, symbol=symbol, leverage=leverage)
-        if res is None:
-            enviar_telegram(f"⚠️ Error al establecer apalancamiento para {symbol}.", tipo="error")
-            logging.error(f"Error al establecer apalancamiento para {symbol}")
-        else:
-            print(f"Apalancamiento establecido a {leverage}x para {symbol}")
-    except Exception as e:
-        logging.error(f"Error al establecer apalancamiento para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al establecer apalancamiento para {symbol}: {e}", tipo="error")
-
-def ejecutar_orden_futures(symbol, side, quantity):
-    try:
-        precision_precio, precision_cantidad = obtener_precisiones_binance(symbol)
-        cantidad_ajustada = ajustar_precision(quantity, precision_cantidad)
-        order = retry_api_call(
-            client.futures_create_order,
-            symbol=symbol,
-            side=SIDE_BUY if side.upper() == "BUY" else SIDE_SELL,
-            type=ORDER_TYPE_MARKET,
-            quantity=cantidad_ajustada
-        )
-        if order:
+        order = retry_api_call(client.create_order, symbol=symbol, side=side.lower(), size=quantity)
+        if order and order.get("status") == "success":
             print(f"Orden ejecutada: {order}")
             return order
         else:
             enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
-            logging.error(f"Error al ejecutar orden para {symbol}")
+            logging.error(f"Error al ejecutar orden para {symbol}: {order}")
             return None
     except Exception as e:
         logging.error(f"Error al ejecutar orden para {symbol}: {e}", exc_info=True)
@@ -350,23 +299,10 @@ def ejecutar_orden_futures(symbol, side, quantity):
 
 def cerrar_posicion(symbol, positionAmt):
     try:
-        if float(positionAmt) > 0:
-            side = SIDE_SELL
-            quantity = abs(float(positionAmt))
-        else:
-            side = SIDE_BUY
-            quantity = abs(float(positionAmt))
-        precision_precio, precision_cantidad = obtener_precisiones_binance(symbol)
-        cantidad_ajustada = ajustar_precision(quantity, precision_cantidad)
-        order = retry_api_call(
-            client.futures_create_order,
-            symbol=symbol,
-            side=side,
-            type=ORDER_TYPE_MARKET,
-            quantity=cantidad_ajustada,
-            reduceOnly=True
-        )
-        if order:
+        side = "sell" if float(positionAmt) > 0 else "buy"
+        quantity = abs(float(positionAmt))
+        order = retry_api_call(client.create_order, symbol=symbol, side=side, size=quantity)
+        if order and order.get("status") == "success":
             print(f"Posición cerrada para {symbol}: {order}")
             return order
         else:
@@ -378,25 +314,10 @@ def cerrar_posicion(symbol, positionAmt):
         enviar_telegram(f"⚠️ Error al cerrar posición para {symbol}: {e}", tipo="error")
         return None
 
-def obtener_pnl_real(symbol, order_id):
-    try:
-        trades = retry_api_call(client.futures_account_trades, symbol=symbol)
-        if trades is None:
-            return None
-        realized_pnls = [float(t['realizedPnl']) for t in trades if t['orderId'] == order_id]
-        return sum(realized_pnls) if realized_pnls else None
-    except Exception as e:
-        logging.error(f"Error al obtener PnL real para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al obtener PnL real para {symbol}: {e}", tipo="error")
-        return None
-
-def calcular_comision_total(entry_price, qty, fee_rate=0.001, factor=3):
-    return entry_price * qty * fee_rate * factor
-
-def evaluar_cierre_operacion_binance(pos, precio_actual, niveles_atr, fee_rate=0.001):
+def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     try:
         entryPrice = float(pos['entryPrice'])
-        positionAmt = float(pos['positionAmt'])
+        positionAmt = float(pos['size'])
         qty = abs(positionAmt)
         symbol = pos['symbol']
         direccion = "BUY" if positionAmt > 0 else "SELL"
@@ -408,23 +329,13 @@ def evaluar_cierre_operacion_binance(pos, precio_actual, niveles_atr, fee_rate=0
             print(f"[{symbol}] No se encontró TP fijo guardado, usando cierre tradicional.")
             return False
 
-        # --- Se elimina la comprobación restrictiva de TP en pérdida ---
-        # El bot ahora cerrará SIEMPRE que el precio toque el TP fijo.
-
         if (direccion == "BUY" and precio_actual >= tp) or (direccion == "SELL" and precio_actual <= tp):
             print(f"[{symbol}] Cerrando por Take Profit fijo. Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
             order = cerrar_posicion(symbol, positionAmt)
             time.sleep(2)
-            pnl_real = None
-            if order and "orderId" in order:
-                pnl_real = obtener_pnl_real(symbol, order["orderId"])
             pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
-            if pnl_real is not None:
-                icono_cerrado = "🟢" if pnl_real >= 0 else "🔴"
-                pnl_texto = f"PnL real: {pnl_real:.4f}"
-            else:
-                icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
-                pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
+            icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
+            pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
             enviar_telegram(
                 f"{icono_cerrado} Trade CERRADO: {symbol} {direccion}\n"
                 f"Entry: {entryPrice:.4f}\n"
@@ -434,17 +345,17 @@ def evaluar_cierre_operacion_binance(pos, precio_actual, niveles_atr, fee_rate=0
                 tipo="close"
             )
             resumen_diario["trades_cerrados"] += 1
-            resumen_diario["pnl_total"] += pnl_real if pnl_real is not None else pnl_estimado
+            resumen_diario["pnl_total"] += pnl_estimado
             return True
     except Exception as e:
-        print(f"Error en evaluar_cierre_operacion_binance: {e}")
-        logging.error(f"Error en evaluar_cierre_operacion_binance: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error en evaluar_cierre_operacion_binance: {e}", tipo="error")
+        print(f"Error en evaluar_cierre_operacion_hyperliquid: {e}")
+        logging.error(f"Error en evaluar_cierre_operacion_hyperliquid: {e}", exc_info=True)
+        enviar_telegram(f"⚠️ Error en evaluar_cierre_operacion_hyperliquid: {e}", tipo="error")
     return False
 
-def obtener_precio_futuro(symbol):
+def obtener_precio_hyperliquid(symbol):
     try:
-        ticker = retry_api_call(client.futures_symbol_ticker, symbol=symbol)
+        ticker = retry_api_call(client.get_price, symbol=symbol)
         if ticker and 'price' in ticker:
             return float(ticker['price'])
         else:
@@ -453,46 +364,45 @@ def obtener_precio_futuro(symbol):
             logging.error(f"No se encontró la clave 'price' en el ticker de {symbol}: {ticker}")
             return None
     except Exception as e:
-        logging.error(f"Error al obtener precio futuro para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al obtener precio futuro para {symbol}: {e}", tipo="error")
+        logging.error(f"Error al obtener precio para {symbol}: {e}", exc_info=True)
+        enviar_telegram(f"⚠️ Error al obtener precio para {symbol}: {e}", tipo="error")
         return None
 
 if __name__ == "__main__":
     try:
         enviar_telegram("🚀 Bot arrancado correctamente y en ejecución.", tipo="info")
 
-        simbolos = [
-            'ETHUSDT', 'BNBUSDT', 'BTCUSDT', 'SOLUSDT', 'XRPUSDT'
-        ]
+        # Top 10 pares principales manualmente (puedes ajustarlos según disponibilidad en Hyperliquid)
+        simbolos = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'TON', 'LINK']
         intervalo_segundos = 5
         tiempo_inicio = datetime.now()
         last_trade_time = None
 
-        print("Iniciando bot de scalping microestructura v2 con TP fijo, sin trailing, sin Stop Loss ni cierre por timeout (Binance Futures REAL)...")
+        print("Iniciando bot de scalping microestructura v2 con TP fijo, sin trailing, sin Stop Loss ni cierre por timeout (Hyperliquid Testnet)...")
         print(f"Configuración: Apalancamiento={LEVERAGE}x | Margen por operación={MARGIN_PER_TRADE} USDT")
         print(f"TP: {ATR_TP_MULT}xATR (máx {MAX_TP_PCT*100:.1f}% sobre entrada) | SL: NO")
 
         while True:
             print(f"\nTiempo Transcurrido: {datetime.now() - tiempo_inicio}")
 
-            posiciones_binance = obtener_posiciones_binance()
+            posiciones = obtener_posiciones_hyperliquid()
             niveles_atr = cargar_niveles_atr()
 
-            print(f"Posiciones abiertas en Binance ({len(posiciones_binance)}):")
-            for pos in posiciones_binance:
+            print(f"Posiciones abiertas en Hyperliquid ({len(posiciones)}):")
+            for pos in posiciones:
                 symbol = pos['symbol']
-                positionAmt = pos['positionAmt']
+                positionAmt = pos['size']
                 entryPrice = pos['entryPrice']
-                pnl = pos['unRealizedProfit']
+                pnl = pos.get('unrealizedPnl', 0)
                 print(f"  {symbol} | Cantidad: {positionAmt} | Precio Entrada: {entryPrice} | PnL No Realizado: {pnl}")
 
             # --- Evaluación de cierre ---
-            for pos in posiciones_binance:
+            for pos in posiciones:
                 symbol = pos['symbol']
-                precio_actual = obtener_precio_futuro(symbol)
+                precio_actual = obtener_precio_hyperliquid(symbol)
                 if precio_actual is None:
                     continue
-                if evaluar_cierre_operacion_binance(pos, precio_actual, niveles_atr):
+                if evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                     if symbol in niveles_atr:
                         del niveles_atr[symbol]
                         guardar_niveles_atr(niveles_atr)
@@ -508,7 +418,7 @@ if __name__ == "__main__":
             # --- Solo se permite una apertura nueva por ciclo ---
             apertura_realizada = False
             for simbolo in simbolos:
-                ya_abierta = any(pos['symbol'] == simbolo for pos in posiciones_binance)
+                ya_abierta = any(pos['symbol'] == simbolo for pos in posiciones)
                 if ya_abierta or apertura_realizada:
                     continue
 
@@ -517,7 +427,7 @@ if __name__ == "__main__":
                 if datos is None:
                     continue
 
-                precio_actual = obtener_precio_futuro(simbolo)
+                precio_actual = obtener_precio_hyperliquid(simbolo)
                 if precio_actual is None:
                     continue
 
@@ -539,9 +449,8 @@ if __name__ == "__main__":
                         monto_usdt = LEVERAGE * MARGIN_PER_TRADE
                         cantidad_valida = calcular_cantidad_valida(simbolo, monto_usdt)
                         if cantidad_valida:
-                            establecer_apalancamiento(simbolo, LEVERAGE)
-                            orden = ejecutar_orden_futures(simbolo, accion, cantidad_valida)
-                            if orden and "orderId" in orden:
+                            orden = ejecutar_orden_hyperliquid(simbolo, accion, cantidad_valida)
+                            if orden:
                                 tp = calcular_tp_atr(entry_price, atr, accion)
                                 # --- Guardar solo TP FIJO ---
                                 niveles_atr[simbolo] = {"tp_fijo": tp}
