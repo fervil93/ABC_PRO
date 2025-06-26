@@ -13,9 +13,9 @@ ATR_TP_MULT = 1.2
 # Máximo 2% por encima del precio de entrada para TP
 MAX_TP_PCT = 0.02
 
+# config.py
+from secret import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 ### Notificaciones Telegram ###
-TELEGRAM_TOKEN = '7689520849:AAE7QnlgI-d5nxfBTAOQ-q8cfn0fSW1rnvQ'
-TELEGRAM_CHAT_ID = '139759956'
 NOTIFY_TRADE_OPEN = True      # Notificar cuando abre trade
 NOTIFY_TRADE_CLOSE = True     # Notificar cuando cierra trade
 NOTIFY_ERRORS = False         # Notificar errores críticos
