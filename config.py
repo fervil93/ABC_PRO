@@ -1,3 +1,6 @@
+# Importa los secretos (token y chat id) desde secret.py
+from secret import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+
 # Timeout para cierre automático de posiciones (en minutos)
 TIMEOUT_MINUTES = 99999999999
 
@@ -13,8 +16,6 @@ ATR_TP_MULT = 1.2
 # Máximo 2% por encima del precio de entrada para TP
 MAX_TP_PCT = 0.02
 
-# config.py
-from secret import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 ### Notificaciones Telegram ###
 NOTIFY_TRADE_OPEN = True      # Notificar cuando abre trade
 NOTIFY_TRADE_CLOSE = True     # Notificar cuando cierra trade
