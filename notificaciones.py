@@ -1,7 +1,12 @@
 import requests
-from config import (TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, 
-                    NOTIFY_TRADE_OPEN, NOTIFY_TRADE_CLOSE, 
-                    NOTIFY_ERRORS, NOTIFY_DAILY_SUMMARY)
+from config import (
+    TELEGRAM_TOKEN,
+    TELEGRAM_CHAT_ID,
+    NOTIFY_TRADE_OPEN,
+    NOTIFY_TRADE_CLOSE,
+    NOTIFY_ERRORS,
+    NOTIFY_DAILY_SUMMARY
+)
 
 def enviar_telegram(mensaje, tipo="info"):
     if tipo == "open" and not NOTIFY_TRADE_OPEN:
