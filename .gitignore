@@ -1,0 +1,33 @@
+# Ignora los archivos de claves y secretos
+secret.py
+secret.py.example
+
+# Archivos temporales de Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+
+# Configuración de entornos virtuales
+env/
+venv/
+ENV/
+.venv/
+.env/
+
+# Archivos de configuración de editores comunes
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de logs y cachés
+*.log
+.cache/
+*.sqlite3
+
+# Otros archivos que quieras ignorar
