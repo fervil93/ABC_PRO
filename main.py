@@ -5,9 +5,10 @@ from datetime import datetime, timedelta
 from binance.client import Client
 from binance.enums import *
 from config import (
-    API_KEY, API_SECRET, TIMEOUT_MINUTES,
+    TIMEOUT_MINUTES,
     LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
 )
+from secret import API_KEY, API_SECRET
 from notificaciones import enviar_telegram
 import math
 import json
@@ -26,7 +27,7 @@ with open("tiempo_inicio_bot.txt", "w") as f:
     f.write(datetime.now().isoformat())
 
 client = Client(API_KEY, API_SECRET)
-client.FUTURES_URL = 'https://testnet.binancefuture.com/fapi'
+# No establecer FUTURES_URL manualmente, por defecto conecta a real
 
 ATR_SL_MULT = 1.0
 
@@ -467,7 +468,7 @@ if __name__ == "__main__":
         tiempo_inicio = datetime.now()
         last_trade_time = None
 
-        print("Iniciando bot de scalping microestructura v2 con TP fijo, sin trailing, sin Stop Loss ni cierre por timeout (Binance Futures Testnet)...")
+        print("Iniciando bot de scalping microestructura v2 con TP fijo, sin trailing, sin Stop Loss ni cierre por timeout (Binance Futures REAL)...")
         print(f"Configuración: Apalancamiento={LEVERAGE}x | Margen por operación={MARGIN_PER_TRADE} USDT")
         print(f"TP: {ATR_TP_MULT}xATR (máx {MAX_TP_PCT*100:.1f}% sobre entrada) | SL: NO")
 
