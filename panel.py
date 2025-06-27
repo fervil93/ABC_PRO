@@ -1,391 +1,104 @@
 import streamlit as st
-import requests
-import time
 import os
 import pandas as pd
-import numpy as np
+import time
 from datetime import datetime, timedelta
-import plotly.graph_objects as go
-from hyperliquid_client import HyperliquidClient
 import json
+from hyperliquid_client import HyperliquidClient
 
 # Configuración de página Streamlit
 st.set_page_config(
     page_title="Monitor de Trading Hyperliquid",
     page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    layout="wide"
 )
 
-# Estilo CSS personalizado con colores más atractivos y mejor formato
+# Estilos CSS simplificados y eficaces
 st.markdown("""
 <style>
+    /* Estilos generales */
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2rem;
         font-weight: 700;
         text-align: center;
         margin-bottom: 1rem;
         color: #1E88E5;
     }
-    .dashboard-card {
+    
+    /* Estilos para métricas */
+    .metric-container {
         background-color: #f8f9fa;
-        border-radius: 10px;
+        border-radius: 8px;
         padding: 15px;
-        margin: 10px 0px;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    .metric-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-    }
-    .metric-label {
-        font-size: 0.9rem;
-        color: #6c757d;
-        margin-top: -5px;
-    }
+    
+    /* Estilos para valores de PnL */
     .profit {
-        color: #28a745 !important;
+        color: #28a745;
+        font-weight: 600;
     }
     .loss {
-        color: #dc3545 !important;
-    }
-    .neutral {
-        color: #6c757d !important;
-    }
-    .info-text {
-        background-color: #e3f2fd;
-        padding: 10px;
-        border-radius: 5px;
-        font-size: 0.9rem;
-    }
-    /* Estilos para tablas */
-    .dataframe {
-        width: 100%;
-        border-collapse: collapse;
-    }
-    .dataframe th {
-        background-color: #f1f3f5;
-        color: #495057;
+        color: #dc3545;
         font-weight: 600;
-        text-align: left;
-        padding: 12px 8px;
-        border-bottom: 2px solid #dee2e6;
     }
-    .dataframe td {
-        padding: 12px 8px;
-        border-bottom: 1px solid #dee2e6;
-        font-size: 0.95rem;
-    }
-    .dataframe tr:nth-child(even) {
-        background-color: #f8f9fa;
-    }
-    /* Estilos para botones de símbolos */
-    div.row-widget.stButton {
-        background-color: #f0f2f5;
-        border-radius: 6px;
-        padding: 0px;
-        margin-bottom: 5px;
-        transition: all 0.3s ease;
-    }
-    div.row-widget.stButton:hover {
-        background-color: #e0e7ff;
-        transform: scale(1.02);
-    }
-    div.row-widget.stButton > button {
-        width: 100%;
-        border: none;
-        background: transparent;
-        font-weight: 500;
-        color: #444;
-        padding: 5px 0px;
-    }
-    .status-badge {
-        display: inline-block;
+    
+    /* Estilos para badges */
+    .badge {
         padding: 3px 8px;
-        font-size: 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
         font-weight: 600;
-        border-radius: 12px;
     }
-    .badge-long {
-        background-color: #d3f9d8;
-        color: #0b7724;
+    .long-badge {
+        background-color: rgba(40, 167, 69, 0.2);
+        color: #28a745;
     }
-    .badge-short {
-        background-color: #ffe3e3;
-        color: #c92a2a;
+    .short-badge {
+        background-color: rgba(220, 53, 69, 0.2);
+        color: #dc3545;
     }
+    
+    /* Estilos para saldo */
     .saldo-grande {
-        font-size: 2.2rem;
+        font-size: 2rem;
         font-weight: 700;
         color: #1E88E5;
         text-align: center;
-        margin: 15px 0;
+        margin: 20px 0 5px 0;
     }
     .saldo-label {
         font-size: 0.9rem;
         color: #6c757d;
         text-align: center;
-        margin-top: -10px;
-    }
-    /* Botón de cerrar posición */
-    .btn-cerrar {
-        background-color: #e74c3c;
-        color: white;
-        border: none;
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        font-weight: 600;
-        transition: all 0.2s;
-    }
-    .btn-cerrar:hover {
-        background-color: #c0392b;
-    }
-    /* Mejoras estéticas generales */
-    h1, h2, h3, h4 {
-        color: #333;
-        margin-top: 20px;
-        margin-bottom: 15px;
-    }
-    .section-container {
-        padding: 5px;
         margin-bottom: 20px;
     }
-    /* Mensaje de éxito */
-    .success-message {
+    
+    /* Estilos para mensajes */
+    .success-msg {
         background-color: #d4edda;
         color: #155724;
         padding: 10px;
         border-radius: 4px;
-        margin: 10px 0;
+        margin-bottom: 15px;
     }
-    /* Mensaje de error */
-    .error-message {
+    .error-msg {
         background-color: #f8d7da;
         color: #721c24;
         padding: 10px;
         border-radius: 4px;
-        margin: 10px 0;
+        margin-bottom: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Inicializar cliente de Hyperliquid
+# Inicializar cliente Hyperliquid
 client = HyperliquidClient()
 
-# Definir const MAX_RETRIES
-MAX_RETRIES = 3
-
-# Función para realizar intentos con reintentos
-def retry_api_call(func, *args, **kwargs):
-    for intento in range(1, MAX_RETRIES + 1):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            print(f"[INTENTO {intento}/{MAX_RETRIES}] Error en {func.__name__}: {e}")
-            if intento == MAX_RETRIES:
-                raise
-            else:
-                time.sleep(2)
-
-# Función para formatear números con separadores de miles
-def formatear_numero(numero, decimales=2):
-    if isinstance(numero, (int, float)):
-        return f"{numero:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return numero
-
-# Función para obtener saldo actual
-def obtener_saldo():
-    try:
-        # Intentar leer el saldo desde el archivo que actualiza el bot
-        if os.path.exists("ultimo_saldo.txt"):
-            with open("ultimo_saldo.txt", "r") as f:
-                saldo = float(f.read().strip())
-                return saldo
-        
-        # Si no hay archivo, intentar obtener directamente de la API
-        account = client.get_account()
-        if account:
-            if "equity" in account:
-                return float(account["equity"])
-            elif "marginSummary" in account and "accountValue" in account["marginSummary"]:
-                return float(account["marginSummary"]["accountValue"])
-        
-        return None
-    except Exception as e:
-        print(f"Error al obtener saldo: {e}")
-        return None
-
-# Función para obtener posiciones abiertas
-def obtener_posiciones_hyperliquid():
-    """
-    Obtiene las posiciones abiertas en Hyperliquid y las formatea para uso del panel.
-    Implementación robusta que maneja la estructura específica de la API de Hyperliquid.
-    """
-    try:
-        account = retry_api_call(client.get_account)
-        
-        # Verificar si tenemos la estructura esperada
-        if not account or "assetPositions" not in account:
-            return []
-        
-        # Lista para almacenar posiciones formateadas
-        posiciones_abiertas = []
-        
-        for item in account["assetPositions"]:
-            try:
-                # Si position está en las claves y es un diccionario, extraer de ahí
-                if 'position' in item and isinstance(item['position'], dict):
-                    p = item['position']
-                else:
-                    p = item
-                
-                # Extraer el símbolo/asset
-                symbol = ""
-                for key in ['coin', 'asset', 'symbol']:
-                    if key in p:
-                        symbol = p[key]
-                        break
-                
-                if not symbol:
-                    continue
-                
-                # Extraer el tamaño de la posición
-                position_float = None
-                if 'szi' in p:
-                    try:
-                        position_float = float(p['szi'])
-                    except (ValueError, TypeError):
-                        continue
-                
-                # Solo procesar posiciones no-cero
-                if position_float is None or abs(position_float) < 0.0001:
-                    continue
-                
-                # Extraer precio de entrada
-                entry_price_float = 0
-                if 'entryPx' in p:
-                    try:
-                        entry_price_float = float(p['entryPx'])
-                    except (ValueError, TypeError):
-                        pass
-                
-                # Extraer PnL
-                unrealized_pnl_float = 0
-                if 'unrealizedPnl' in p:
-                    try:
-                        unrealized_pnl_float = float(p['unrealizedPnl'])
-                    except (ValueError, TypeError):
-                        pass
-                
-                # Calcular dirección (long/short)
-                direccion = "LONG" if position_float > 0 else "SHORT"
-                
-                # Crear una posición formateada
-                posicion_formateada = {
-                    'symbol': symbol,
-                    'size': abs(position_float),
-                    'entryPrice': entry_price_float,
-                    'unrealizedPnl': unrealized_pnl_float,
-                    'direction': direccion,
-                    'raw_position': position_float  # Añadir el valor raw para cierre
-                }
-                posiciones_abiertas.append(posicion_formateada)
-                
-            except Exception as e:
-                # Solo registrar error y continuar con la siguiente posición
-                print(f"Error procesando posición: {e}")
-                continue
-        
-        return posiciones_abiertas
-    except Exception as e:
-        # Registrar el error específico para depuración
-        error_msg = f"Error al obtener posiciones: {str(e)}"
-        print(error_msg)
-        return []
-
-# Función para cerrar una posición
-def cerrar_posicion(symbol, position_amount):
-    """
-    Cierra una posición en Hyperliquid mediante orden de mercado
-    """
-    try:
-        # Determinar el lado (compra/venta) según la dirección de la posición
-        side = "sell" if float(position_amount) > 0 else "buy"
-        quantity = abs(float(position_amount))
-        
-        # Ejecutar la orden para cerrar la posición
-        order = retry_api_call(
-            client.create_order, 
-            symbol=symbol, 
-            side=side, 
-            size=quantity
-        )
-        
-        if order and "status" in order:
-            print(f"Posición cerrada para {symbol}: {order}")
-            
-            # Cancelar también cualquier orden TP pendiente
-            try:
-                if os.path.exists("tp_orders.json"):
-                    with open("tp_orders.json", "r") as f:
-                        tp_orders = json.load(f)
-                    
-                    if symbol in tp_orders and "order_id" in tp_orders[symbol]:
-                        client.cancel_order(symbol=symbol, order_id=tp_orders[symbol]["order_id"])
-                        print(f"Orden TP cancelada para {symbol}")
-                        
-                        # Eliminar del archivo
-                        del tp_orders[symbol]
-                        with open("tp_orders.json", "w") as f:
-                            json.dump(tp_orders, f)
-            except Exception as e:
-                print(f"Error cancelando orden TP: {e}")
-                
-            return True, f"Posición cerrada para {symbol}"
-        else:
-            return False, f"Error al cerrar posición para {symbol}"
-    except Exception as e:
-        return False, f"Error al cerrar posición para {symbol}: {e}"
-
-# Función para obtener historial reciente de trades
-def obtener_historial_trades(limit=10):
-    try:
-        trades = []
-        if os.path.exists("historial_trades.json"):
-            with open("historial_trades.json", "r") as f:
-                trades = json.load(f)
-        return trades[:limit]
-    except Exception as e:
-        print(f"Error al obtener historial de trades: {e}")
-        return []
-
-# Función para obtener símbolos disponibles
-def obtener_simbolos_disponibles():
-    try:
-        if os.path.exists("simbolos_disponibles.txt"):
-            with open("simbolos_disponibles.txt", "r") as f:
-                return f.read().strip().split(",")
-        return []
-    except Exception as e:
-        print(f"Error al obtener símbolos disponibles: {e}")
-        return []
-
-# Función para verificar tiempo de actividad del bot
-def tiempo_actividad_bot():
-    try:
-        if os.path.exists("tiempo_inicio_bot.txt"):
-            with open("tiempo_inicio_bot.txt", "r") as f:
-                inicio = datetime.fromisoformat(f.read().strip())
-                return datetime.now() - inicio
-        return None
-    except Exception as e:
-        print(f"Error al calcular tiempo de actividad: {e}")
-        return None
-
-# Función para cargar configuración
+# Funciones básicas
 def cargar_configuracion():
+    """Carga la configuración desde el archivo config.py"""
     try:
         from config import LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
         return {
@@ -403,29 +116,183 @@ def cargar_configuracion():
             "max_tp_pct": 0.02
         }
 
-# Función para dar formato a las tablas HTML
-def formato_tabla_html(df, titulo_columnas=None):
-    """
-    Aplica estilos mejorados a un DataFrame y lo convierte a HTML
-    """
-    # Si se proporcionaron títulos de columnas personalizados
-    if titulo_columnas:
-        df.columns = titulo_columnas
-    
-    # Aplicar estilos según el tipo de datos (especialmente para PnL)
-    styles = []
-    for col in df.columns:
-        if col in ['PnL', 'unrealizedPnl']:
-            styles.append({
-                'selector': f'td:nth-child({list(df.columns).index(col) + 1})',
-                'props': [
-                    ('color', lambda x: 'green' if x > 0 else 'red' if x < 0 else 'inherit')
-                ]
-            })
-    
-    # Convertir a HTML con estilos
-    tabla_html = df.to_html(classes='dataframe', escape=False, index=False)
-    return tabla_html
+def obtener_saldo():
+    """Obtiene el saldo actual de la cuenta"""
+    try:
+        if os.path.exists("ultimo_saldo.txt"):
+            with open("ultimo_saldo.txt", "r") as f:
+                saldo = float(f.read().strip())
+                return saldo
+        
+        # Intentar obtener directamente de la API como respaldo
+        account = client.get_account()
+        if account:
+            if "equity" in account:
+                return float(account["equity"])
+            elif "marginSummary" in account and "accountValue" in account["marginSummary"]:
+                return float(account["marginSummary"]["accountValue"])
+        
+        return None
+    except Exception as e:
+        print(f"Error al obtener saldo: {e}")
+        return None
+
+def obtener_posiciones_hyperliquid():
+    """Obtiene las posiciones abiertas en Hyperliquid"""
+    try:
+        account = client.get_account()
+        
+        if not account or "assetPositions" not in account:
+            return []
+        
+        posiciones_abiertas = []
+        
+        for item in account["assetPositions"]:
+            try:
+                # Extraer datos de la posición
+                p = item['position'] if 'position' in item and isinstance(item['position'], dict) else item
+                
+                # Obtener símbolo
+                symbol = ""
+                for key in ['coin', 'asset', 'symbol']:
+                    if key in p:
+                        symbol = p[key]
+                        break
+                
+                if not symbol:
+                    continue
+                
+                # Obtener tamaño de posición
+                position_size = None
+                if 'szi' in p:
+                    try:
+                        position_size = float(p['szi'])
+                    except (ValueError, TypeError):
+                        continue
+                
+                # Solo procesar posiciones no-cero
+                if position_size is None or abs(position_size) < 0.0001:
+                    continue
+                
+                # Extraer precio de entrada
+                entry_price = 0
+                if 'entryPx' in p:
+                    try:
+                        entry_price = float(p['entryPx'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Extraer PnL
+                unrealized_pnl = 0
+                if 'unrealizedPnl' in p:
+                    try:
+                        unrealized_pnl = float(p['unrealizedPnl'])
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Crear objeto de posición
+                posicion_formateada = {
+                    'symbol': symbol,
+                    'size': abs(position_size),
+                    'entryPrice': entry_price,
+                    'unrealizedPnl': unrealized_pnl,
+                    'direction': "LONG" if position_size > 0 else "SHORT",
+                    'raw_position': position_size
+                }
+                posiciones_abiertas.append(posicion_formateada)
+                
+            except Exception as e:
+                print(f"Error procesando posición: {e}")
+                continue
+        
+        return posiciones_abiertas
+    except Exception as e:
+        print(f"Error al obtener posiciones: {e}")
+        return []
+
+def obtener_simbolos_disponibles():
+    """Obtiene la lista de símbolos disponibles para operar"""
+    try:
+        if os.path.exists("simbolos_disponibles.txt"):
+            with open("simbolos_disponibles.txt", "r") as f:
+                return f.read().strip().split(",")
+        return []
+    except Exception as e:
+        print(f"Error al obtener símbolos disponibles: {e}")
+        return []
+
+def obtener_historial_trades(limit=10):
+    """Obtiene el historial reciente de trades"""
+    try:
+        if os.path.exists("historial_trades.json"):
+            with open("historial_trades.json", "r") as f:
+                trades = json.load(f)
+                return trades[:limit]
+        return []
+    except Exception as e:
+        print(f"Error al obtener historial de trades: {e}")
+        return []
+
+def tiempo_actividad_bot():
+    """Calcula el tiempo de actividad del bot"""
+    try:
+        if os.path.exists("tiempo_inicio_bot.txt"):
+            with open("tiempo_inicio_bot.txt", "r") as f:
+                inicio = datetime.fromisoformat(f.read().strip())
+                return datetime.now() - inicio
+        return None
+    except Exception as e:
+        print(f"Error al calcular tiempo de actividad: {e}")
+        return None
+
+def cerrar_posicion(symbol, position_amount):
+    """Cierra una posición específica en Hyperliquid"""
+    try:
+        # Determinar el lado (compra/venta) según la dirección de la posición
+        side = "sell" if float(position_amount) > 0 else "buy"
+        quantity = abs(float(position_amount))
+        
+        # Ejecutar la orden para cerrar la posición
+        for intento in range(1, 4):  # Máximo 3 intentos
+            try:
+                order = client.create_order(symbol=symbol, side=side, size=quantity)
+                
+                if order and "status" in order:
+                    print(f"Posición cerrada para {symbol}: {order}")
+                    
+                    # Cancelar también cualquier orden TP pendiente
+                    try:
+                        if os.path.exists("tp_orders.json"):
+                            with open("tp_orders.json", "r") as f:
+                                tp_orders = json.load(f)
+                            
+                            if symbol in tp_orders and "order_id" in tp_orders[symbol]:
+                                client.cancel_order(symbol=symbol, order_id=tp_orders[symbol]["order_id"])
+                                print(f"Orden TP cancelada para {symbol}")
+                                
+                                # Eliminar del archivo
+                                del tp_orders[symbol]
+                                with open("tp_orders.json", "w") as f:
+                                    json.dump(tp_orders, f)
+                    except Exception as e:
+                        print(f"Error cancelando orden TP: {e}")
+                        
+                    return True, f"Posición cerrada para {symbol}"
+                else:
+                    print(f"Intento {intento}/3: Error en respuesta al cerrar posición para {symbol}")
+            except Exception as e:
+                print(f"Intento {intento}/3: Error al cerrar posición para {symbol}: {e}")
+                time.sleep(1)  # Esperar antes de reintentar
+        
+        return False, f"Error al cerrar posición para {symbol} después de varios intentos"
+    except Exception as e:
+        return False, f"Error al cerrar posición para {symbol}: {e}"
+
+# Inicializar estados de sesión
+if 'mensaje' not in st.session_state:
+    st.session_state.mensaje = None
+    st.session_state.tipo_mensaje = None
+    st.session_state.procesando_cierre = False
 
 # Encabezado principal
 st.markdown('<h1 class="main-header">📊 Monitor de Trading Hyperliquid</h1>', unsafe_allow_html=True)
@@ -437,127 +304,107 @@ st.write(f"Actualización cada 30s | Tiempo activo: {str(tiempo_activo).split('.
 # Cargar configuración
 config = cargar_configuracion()
 
-# Contenedor para métricas/configuración
-with st.container():
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        with st.container():
-            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-            st.metric("TP", f"{config['atr_tp_mult']}×ATR")
-            st.markdown(f'<div class="metric-label">(máx {config["max_tp_pct"]*100}%)</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-    with col2:
-        with st.container():
-            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-            st.metric("SL", "NO")
-            st.markdown('<div class="metric-label">Sin Stop Loss</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-    with col3:
-        with st.container():
-            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-            st.metric("APALANCAMIENTO", f"{config['leverage']}×")
-            st.markdown('<div class="metric-label">Nivel de apalancamiento</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-    with col4:
-        with st.container():
-            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
-            st.metric("MARGEN/TRADE", f"{config['margin_per_trade']}")
-            st.markdown('<div class="metric-label">USDT</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+# Mostrar métricas de configuración (simplificadas)
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("TP", f"{config['atr_tp_mult']}×ATR", help="Multiplicador de ATR para el Take Profit")
+    st.caption(f"(máx {config['max_tp_pct']*100}%)")
+with col2:
+    st.metric("SL", "NO", help="Sin Stop Loss automático")
+with col3:
+    st.metric("APALANCAMIENTO", f"{config['leverage']}×", help="Nivel de apalancamiento utilizado")
+with col4:
+    st.metric("MARGEN/TRADE", f"{config['margin_per_trade']}", help="Margen utilizado por operación")
+    st.caption("USDT")
 
-# Mostrar saldo en formato grande y atractivo
+# Mostrar saldo actual
 saldo_actual = obtener_saldo()
 if saldo_actual is not None:
-    st.markdown(f'<div class="saldo-grande">{formatear_numero(saldo_actual, 2)} USDT</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="saldo-label">Saldo actual</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="saldo-grande">{saldo_actual:.2f} USDT</div><div class="saldo-label">Saldo actual</div>', unsafe_allow_html=True)
 else:
     st.warning("No se pudo obtener el saldo actual.")
 
-# Posiciones abiertas
-st.markdown('<div class="section-container">', unsafe_allow_html=True)
-st.header("Posiciones Abiertas")
-
-# Estado para mensajes de operaciones
-if "mensaje_cierre" not in st.session_state:
-    st.session_state.mensaje_cierre = None
+# Mostrar mensajes (éxito/error)
+if st.session_state.mensaje:
+    msg_class = "success-msg" if st.session_state.tipo_mensaje == "success" else "error-msg"
+    st.markdown(f'<div class="{msg_class}">{st.session_state.mensaje}</div>', unsafe_allow_html=True)
+    # Reset mensaje después de mostrarlo una vez
+    st.session_state.mensaje = None
     st.session_state.tipo_mensaje = None
 
-# Mostrar mensajes de operaciones previas
-if st.session_state.mensaje_cierre:
-    mensaje_clase = "success-message" if st.session_state.tipo_mensaje == "success" else "error-message"
-    st.markdown(f'<div class="{mensaje_clase}">{st.session_state.mensaje_cierre}</div>', unsafe_allow_html=True)
-    
-    # Limpiar mensaje después de mostrarlo
-    if st.session_state.get("auto_clear", False):
-        st.session_state.mensaje_cierre = None
-        st.session_state.tipo_mensaje = None
-    
+# Posiciones abiertas
+st.header("Posiciones Abiertas")
+
 posiciones = obtener_posiciones_hyperliquid()
 if not posiciones:
     st.info("🧙‍♂️ No hay operaciones abiertas en este momento.")
 else:
-    # Crear un DataFrame para mostrar las posiciones de manera más atractiva
-    tabla_data = []
-    for i, pos in enumerate(posiciones):
-        pnl_class = "profit" if pos['unrealizedPnl'] >= 0 else "loss"
-        direccion_class = "badge-long" if pos['direction'] == "LONG" else "badge-short"
-        
-        # Agregar el botón de cerrar como HTML
-        boton_cerrar = f'<button class="btn-cerrar" onclick="document.getElementById(\'cerrar-posicion-{i}\').click()">Cerrar</button>'
-        
-        tabla_data.append({
+    # Crear DataFrame con las posiciones
+    data = []
+    for pos in posiciones:
+        data.append({
             "Símbolo": pos['symbol'],
-            "Dirección": f'<span class="status-badge {direccion_class}">{pos["direction"]}</span>',
-            "Tamaño": formatear_numero(pos['size'], 1),
-            "Precio Entrada": formatear_numero(pos['entryPrice'], 5),
-            "PnL": f'<span class="{pnl_class}">{formatear_numero(pos["unrealizedPnl"], 2)}</span>',
-            "Acción": boton_cerrar
+            "Dirección": pos['direction'],
+            "Tamaño": f"{pos['size']:.1f}",
+            "Precio Entrada": f"{pos['entryPrice']:.5f}",
+            "PnL": f"{pos['unrealizedPnl']:.2f}",
+            "raw_position": pos['raw_position']
         })
     
-    # Crear DataFrame y mostrar como tabla HTML estilizada
-    df = pd.DataFrame(tabla_data)
-    st.markdown(formato_tabla_html(df), unsafe_allow_html=True)
+    df = pd.DataFrame(data)
     
-    # Botones ocultos para cerrar posiciones
+    # Crear tabla sin la columna raw_position
+    tabla_display = df.drop(columns=['raw_position'])
+    
+    # Función para aplicar formato condicional a las celdas
+    def highlight_direccion(val):
+        if val == 'LONG':
+            return 'background-color: rgba(40, 167, 69, 0.2); color: #28a745; font-weight: 600'
+        elif val == 'SHORT':
+            return 'background-color: rgba(220, 53, 69, 0.2); color: #dc3545; font-weight: 600'
+        return ''
+    
+    def highlight_pnl(val):
+        try:
+            num = float(val)
+            if num > 0:
+                return 'color: #28a745; font-weight: 600'
+            elif num < 0:
+                return 'color: #dc3545; font-weight: 600'
+        except:
+            pass
+        return ''
+    
+    # Aplicar formato condicional
+    tabla_formateada = tabla_display.style.applymap(highlight_direccion, subset=['Dirección']).applymap(highlight_pnl, subset=['PnL'])
+    
+    # Mostrar tabla de posiciones
+    st.dataframe(tabla_formateada, use_container_width=True)
+    
+    # Botones para cerrar posiciones
+    st.write("Selecciona una posición para cerrar:")
     for i, pos in enumerate(posiciones):
-        if st.button(f"Cerrar posición {pos['symbol']}", key=f"cerrar-posicion-{i}", help=f"Cerrar posición {pos['direction']} en {pos['symbol']}", type="primary"):
-            success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
-            if success:
-                st.session_state.mensaje_cierre = f"✅ {mensaje}"
-                st.session_state.tipo_mensaje = "success"
-            else:
-                st.session_state.mensaje_cierre = f"❌ {mensaje}"
-                st.session_state.tipo_mensaje = "error"
-            st.session_state.auto_clear = True
-            st.experimental_rerun()  # Refrescar la página
-
-st.markdown('</div>', unsafe_allow_html=True)
+        if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_close_{pos['symbol']}"):
+            with st.spinner(f"Cerrando posición {pos['symbol']}..."):
+                success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+                st.session_state.mensaje = mensaje
+                st.session_state.tipo_mensaje = "success" if success else "error"
+                st.experimental_rerun()
 
 # Pares disponibles
-st.markdown('<div class="section-container">', unsafe_allow_html=True)
 st.header("Pares Disponibles")
 simbolos = obtener_simbolos_disponibles()
-
 if simbolos:
-    # Crear botones más atractivos para los símbolos
-    # Determinar número de columnas según cantidad de símbolos
-    num_simbolos = len(simbolos)
-    num_cols = min(5, max(2, num_simbolos // 4 + 1))
-    
-    cols = st.columns(num_cols)
-    for i, simbolo in enumerate(simbolos):
-        with cols[i % num_cols]:
-            st.button(simbolo, key=f"symbol_{simbolo}")
+    # Mostrar chips o badges para los símbolos
+    chunks = [simbolos[i:i+5] for i in range(0, len(simbolos), 5)]
+    for chunk in chunks:
+        cols = st.columns(5)
+        for i, simbolo in enumerate(chunk):
+            cols[i].write(f"**{simbolo}**")
 else:
     st.info("No se encontraron símbolos disponibles.")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Historial de operaciones
-st.markdown('<div class="section-container">', unsafe_allow_html=True)
 st.header("Historial de Operaciones")
 
 trades = obtener_historial_trades()
@@ -566,25 +413,44 @@ if trades:
     historial_data = []
     for trade in trades:
         fecha = datetime.fromisoformat(trade.get('fecha', '')) if 'fecha' in trade else datetime.now()
-        pnl_class = "profit" if trade.get('pnl', 0) >= 0 else "loss"
-        pnl_formatted = formatear_numero(trade.get('pnl', 0), 2)
-        tipo_class = "badge-long" if trade.get('tipo', '').upper() == "BUY" else "badge-short"
-        
         historial_data.append({
             "Fecha": fecha.strftime("%Y-%m-%d %H:%M"),
             "Símbolo": trade.get('symbol', ''),
-            "Tipo": f'<span class="status-badge {tipo_class}">{trade.get("tipo", "").upper()}</span>',
-            "Entrada": formatear_numero(trade.get('entry', 0), 5),
-            "Salida": formatear_numero(trade.get('exit', 0), 5),
-            "PnL": f'<span class="{pnl_class}">{pnl_formatted}</span>'
+            "Tipo": trade.get('tipo', '').upper(),
+            "Entrada": f"{trade.get('entry', 0):.5f}",
+            "Salida": f"{trade.get('exit', 0):.5f}",
+            "PnL": f"{trade.get('pnl', 0):.2f}"
         })
     
-    # Convertir a DataFrame y mostrar
+    # Convertir a DataFrame
     df_hist = pd.DataFrame(historial_data)
-    st.markdown(formato_tabla_html(df_hist), unsafe_allow_html=True)
+    
+    # Función para aplicar formato condicional a las celdas
+    def highlight_tipo(val):
+        if val == 'BUY':
+            return 'background-color: rgba(40, 167, 69, 0.2); color: #28a745; font-weight: 600'
+        elif val == 'SELL':
+            return 'background-color: rgba(220, 53, 69, 0.2); color: #dc3545; font-weight: 600'
+        return ''
+    
+    def highlight_pnl_hist(val):
+        try:
+            num = float(val)
+            if num > 0:
+                return 'color: #28a745; font-weight: 600'
+            elif num < 0:
+                return 'color: #dc3545; font-weight: 600'
+        except:
+            pass
+        return ''
+    
+    # Aplicar formato condicional
+    historial_formateado = df_hist.style.applymap(highlight_tipo, subset=['Tipo']).applymap(highlight_pnl_hist, subset=['PnL'])
+    
+    # Mostrar historial
+    st.dataframe(historial_formateado, use_container_width=True)
 else:
     st.info("No hay historial de operaciones disponible.")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Función para actualizar automáticamente la página
 st.markdown(
