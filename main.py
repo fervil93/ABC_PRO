@@ -55,6 +55,7 @@ MAX_RETRIES = 3
 RETRY_SLEEP = 2
 VOLATILITY_WINDOW = 10
 VOLATILITY_UMBRAL = 0.015
+REEVALUACION_SIMBOLOS_HORAS = 6  # Frecuencia para reevaluar símbolos
 
 resumen_diario = {
     "trades_abiertos": 0,
@@ -79,15 +80,39 @@ def obtener_simbolos_disponibles():
             # Intenta obtener precio actual para verificar disponibilidad
             precio = client.get_price(symbol)
             if precio and precio.get('mid'):
-                simbolos_disponibles.append(symbol)
-                print(f"✅ {symbol} disponible - Precio: {precio.get('mid')}")
+                # Verificar además que podemos obtener datos históricos
+                df = client.get_ohlcv(symbol, '1m', 10)  # Solo probamos con 10 velas
+                if df is not None and len(df) > 0:
+                    simbolos_disponibles.append(symbol)
+                    print(f"✅ {symbol} disponible - Precio: {precio.get('mid')}")
+                else:
+                    print(f"❌ {symbol} tiene precio pero no datos históricos")
             else:
                 print(f"❌ {symbol} no disponible o sin liquidez")
         except Exception as e:
             print(f"❌ Error verificando {symbol}: {str(e)}")
     
+    # Guardar la última vez que verificamos los símbolos
+    with open("ultima_verificacion_simbolos.txt", "w") as f:
+        f.write(datetime.now().isoformat())
+    
     enviar_telegram(f"🔍 Símbolos disponibles para operar ({len(simbolos_disponibles)}/{len(todos_simbolos)}): {', '.join(simbolos_disponibles)}", tipo="info")
     return simbolos_disponibles
+
+def verificar_tiempo_para_reevaluar():
+    """Verifica si es momento de reevaluar los símbolos disponibles"""
+    try:
+        if os.path.exists("ultima_verificacion_simbolos.txt"):
+            with open("ultima_verificacion_simbolos.txt", "r") as f:
+                ultima_verificacion = datetime.fromisoformat(f.read().strip())
+                tiempo_transcurrido = datetime.now() - ultima_verificacion
+                if tiempo_transcurrido > timedelta(hours=REEVALUACION_SIMBOLOS_HORAS):
+                    return True
+        else:
+            return True
+    except Exception:
+        return True
+    return False
 
 def retry_api_call(func, *args, **kwargs):
     for intento in range(1, MAX_RETRIES + 1):
@@ -98,7 +123,9 @@ def retry_api_call(func, *args, **kwargs):
             print(msg)
             logging.error(msg, exc_info=True)
             if intento == MAX_RETRIES:
-                enviar_telegram(f"❗️ Error crítico tras {MAX_RETRIES} intentos en {func.__name__}: {e}", tipo="error")
+                # No enviamos notificaciones por errores de datos históricos
+                if "get_ohlcv" not in str(func) and "datos históricos" not in str(e):
+                    enviar_telegram(f"❗️ Error crítico tras {MAX_RETRIES} intentos en {func.__name__}: {e}", tipo="error")
             else:
                 time.sleep(RETRY_SLEEP)
     return None
@@ -141,9 +168,11 @@ def obtener_posiciones_hyperliquid():
 
 def obtener_datos_historicos(symbol, interval='1m', limit=100):
     try:
+        # No enviamos notificaciones por errores de datos históricos
         df = client.get_ohlcv(symbol, interval, limit)
         if df is None:
-            enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}.", tipo="error")
+            # Solo registrar en el log, sin enviar a Telegram
+            print(f"Error al obtener datos históricos para {symbol}")
             logging.error(f"Error al obtener datos históricos para {symbol}")
             return None
         if isinstance(df, list):
@@ -151,8 +180,9 @@ def obtener_datos_historicos(symbol, interval='1m', limit=100):
             df.columns = ['timestamp','open','high','low','close','volume']
         return df
     except Exception as e:
+        # Solo registrar en el log, sin enviar a Telegram
+        print(f"Error al obtener datos históricos para {symbol}: {e}")
         logging.error(f"Error al obtener datos históricos para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}: {e}", tipo="error")
         return None
 
 def calcular_atr(df, n=14):
@@ -172,7 +202,6 @@ def spread_aceptable(symbol):
         spread_limit = SPREAD_MAX_PCT_POR_SIMBOLO.get(symbol, SPREAD_MAX_PCT)
         order_book = retry_api_call(client.get_order_book, symbol=symbol)
         if not order_book or not order_book['bids'] or not order_book['asks']:
-            enviar_telegram(f"⚠️ No se pudo obtener el order book para {symbol} para evaluar spread.", tipo="error")
             logging.error(f"No se pudo obtener order book para {symbol}")
             return False
         best_bid = float(order_book['bids'][0][0])
@@ -185,7 +214,6 @@ def spread_aceptable(symbol):
         return True
     except Exception as e:
         logging.error(f"Error al evaluar spread aceptable para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al evaluar spread para {symbol}: {e}", tipo="error")
         return False
 
 def detectar_volatilidad_extrema(df):
@@ -268,7 +296,6 @@ def calcular_cantidad_valida(symbol, monto_usdt):
         return cantidad_calculada
     except Exception as e:
         logging.error(f"Error al calcular cantidad válida para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al calcular cantidad válida para {symbol}: {e}", tipo="error")
         return None
 
 def tiene_saldo_suficiente(margen):
@@ -366,19 +393,17 @@ def obtener_precio_hyperliquid(symbol):
             return float(ticker['mid'])
         else:
             print(f"[{symbol}] No se encontró la clave 'mid' en el ticker: {ticker}")
-            enviar_telegram(f"⚠️ No se encontró la clave 'mid' en el ticker de {symbol}.", tipo="error")
             logging.error(f"No se encontró la clave 'mid' en el ticker de {symbol}: {ticker}")
             return None
     except Exception as e:
         logging.error(f"Error al obtener precio para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al obtener precio para {symbol}: {e}", tipo="error")
         return None
 
 if __name__ == "__main__":
     try:
         enviar_telegram("🚀 Bot arrancado correctamente y en ejecución.", tipo="info")
 
-        simbolos = obtener_simbolos_disponibles()  # Ahora obtenemos los símbolos automáticamente
+        simbolos = obtener_simbolos_disponibles()  # Obtenemos los símbolos disponibles al inicio
         
         if not simbolos:
             enviar_telegram("⚠️ No se encontraron símbolos disponibles para operar. El bot se detendrá.", tipo="error")
@@ -387,6 +412,7 @@ if __name__ == "__main__":
         intervalo_segundos = 5
         tiempo_inicio = datetime.now()
         last_trade_time = None
+        ultima_reevaluacion = datetime.now()
 
         print("Iniciando bot de scalping microestructura v2 con TP fijo, sin trailing, sin Stop Loss ni cierre por timeout (Hyperliquid Testnet)...")
         print(f"Configuración: Apalancamiento={LEVERAGE}x | Margen por operación={MARGIN_PER_TRADE} USDT")
@@ -394,6 +420,14 @@ if __name__ == "__main__":
 
         while True:
             print(f"\nTiempo Transcurrido: {datetime.now() - tiempo_inicio}")
+            
+            # Reevaluar los símbolos disponibles periódicamente
+            if verificar_tiempo_para_reevaluar():
+                print("Reevaluando símbolos disponibles...")
+                simbolos_actualizados = obtener_simbolos_disponibles()
+                if simbolos_actualizados:
+                    simbolos = simbolos_actualizados
+                    print(f"Lista de símbolos actualizada: {simbolos}")
 
             posiciones = obtener_posiciones_hyperliquid()
             niveles_atr = cargar_niveles_atr()
