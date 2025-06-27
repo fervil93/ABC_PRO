@@ -1,0 +1,4 @@
+hyperliquid>=0.4.5
+pandas
+numpy
+python-telegram-bot
