@@ -304,9 +304,20 @@ def calcular_cantidad_valida(symbol, monto_usdt):
 def tiene_saldo_suficiente(margen):
     try:
         account = retry_api_call(client.get_account)
-        if not account or "equity" not in account:
+        if not account:
             return False
-        usdt_balance = float(account["equity"])
+        
+        # Intentar obtener el saldo desde diferentes rutas posibles en la respuesta
+        usdt_balance = None
+        if "equity" in account:
+            usdt_balance = float(account["equity"])
+        elif "marginSummary" in account and "accountValue" in account["marginSummary"]:
+            usdt_balance = float(account["marginSummary"]["accountValue"])
+        
+        if usdt_balance is None:
+            print("No se pudo extraer el saldo de la cuenta")
+            return False
+            
         if usdt_balance >= margen:
             return True
         else:
@@ -429,17 +440,26 @@ if __name__ == "__main__":
             # Añadir esta sección para obtener y registrar el saldo
             try:
                 account = retry_api_call(client.get_account)
-                if account and "equity" in account:
-                    saldo_usdt = float(account["equity"])
-                    print(f"🏦 Saldo actual: {saldo_usdt:.4f} USDT")
-                    # Registra en archivo para que el panel lo pueda leer
-                    with open("ultimo_saldo.txt", "w") as f:
-                        f.write(f"{saldo_usdt}")
+                if account:
+                    # Intentar obtener el saldo desde diferentes rutas posibles en la respuesta
+                    saldo_usdt = None
+                    if "equity" in account:
+                        saldo_usdt = float(account["equity"])
+                    elif "marginSummary" in account and "accountValue" in account["marginSummary"]:
+                        saldo_usdt = float(account["marginSummary"]["accountValue"])
+                    
+                    if saldo_usdt is not None:
+                        print(f"🏦 Saldo actual: {saldo_usdt:.4f} USDT")
+                        # Registra en archivo para que el panel lo pueda leer
+                        with open("ultimo_saldo.txt", "w") as f:
+                            f.write(f"{saldo_usdt}")
+                    else:
+                        print("❌ No se pudo extraer el saldo. Respuesta de API:", account)
+                        # Registra las claves disponibles para depuración
+                        if account and isinstance(account, dict):
+                            print("Claves disponibles en la respuesta:", account.keys())
                 else:
-                    print("❌ No se pudo obtener el saldo. Respuesta de API:", account)
-                    # Registra las claves disponibles para depuración
-                    if account and isinstance(account, dict):
-                        print("Claves disponibles en la respuesta:", account.keys())
+                    print("❌ No se pudo obtener la respuesta de la API de cuenta")
             except Exception as e:
                 print(f"❌ Error obteniendo saldo: {e}")
             
