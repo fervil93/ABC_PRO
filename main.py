@@ -26,7 +26,7 @@ with open("tiempo_inicio_bot.txt", "w") as f:
 client = HyperliquidClient()
 
 ATR_SL_MULT = 1.0
-MIN_POTENTIAL_PROFIT = 0.5
+MIN_POTENTIAL_PROFIT = 0.45
 
 SPREAD_MAX_PCT_POR_SIMBOLO = {
     "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 1.5, "XRP": 2.0, "ADA": 1.5,
