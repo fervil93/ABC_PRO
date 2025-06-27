@@ -64,7 +64,7 @@ resumen_diario = {
     "ultimo_envio": datetime.now().date()
 }
 
-def obtener_simbolos_disponibles():
+def obtener_simbolos_disponibles(enviar_mensaje=False):
     """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
     # Lista ampliada de los 20 pares con mayor capitalización en Hyperliquid
     todos_simbolos = [
@@ -96,11 +96,10 @@ def obtener_simbolos_disponibles():
     with open("ultima_verificacion_simbolos.txt", "w") as f:
         f.write(datetime.now().isoformat())
     
-    # NUEVA LÍNEA: Guardar la lista de símbolos disponibles en un archivo
+    # Guardar la lista de símbolos disponibles en un archivo
     with open("simbolos_disponibles.txt", "w") as f:
         f.write(",".join(simbolos_disponibles))
     
-    enviar_telegram(f"🔍 Símbolos disponibles para operar ({len(simbolos_disponibles)}/{len(todos_simbolos)}): {', '.join(simbolos_disponibles)}", tipo="info")
     return simbolos_disponibles
 
 def verificar_tiempo_para_reevaluar():
@@ -405,13 +404,15 @@ def obtener_precio_hyperliquid(symbol):
 
 if __name__ == "__main__":
     try:
-        enviar_telegram("🚀 Bot arrancado correctamente y en ejecución.", tipo="info")
-
-        simbolos = obtener_simbolos_disponibles()  # Obtenemos los símbolos disponibles al inicio
+        # Primero verificamos los símbolos disponibles
+        simbolos = obtener_simbolos_disponibles()
         
         if not simbolos:
             enviar_telegram("⚠️ No se encontraron símbolos disponibles para operar. El bot se detendrá.", tipo="error")
             exit(1)
+        
+        # Ahora enviamos un solo mensaje de inicio con toda la información
+        enviar_telegram(f"🚀 Bot arrancado correctamente y en ejecución.\n\n🔍 Símbolos disponibles para operar ({len(simbolos)}/{20}): {', '.join(simbolos)}", tipo="info")
             
         intervalo_segundos = 5
         tiempo_inicio = datetime.now()
@@ -425,7 +426,7 @@ if __name__ == "__main__":
         while True:
             print(f"\nTiempo Transcurrido: {datetime.now() - tiempo_inicio}")
             
-            # Reevaluar los símbolos disponibles periódicamente
+            # Reevaluar los símbolos disponibles periódicamente (pero sin enviar mensajes)
             if verificar_tiempo_para_reevaluar():
                 print("Reevaluando símbolos disponibles...")
                 simbolos_actualizados = obtener_simbolos_disponibles()
