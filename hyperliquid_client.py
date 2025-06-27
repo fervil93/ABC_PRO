@@ -1,38 +1,22 @@
-from hyperliquid import Client
-from secret import WALLET_ADDRESS, WALLET_PRIVATE_KEY
+import hyperliquid
 from config import API_URL
 
 class HyperliquidClient:
     def __init__(self):
-        self.client = Client(
-            base_url=API_URL,
-            wallet_address=WALLET_ADDRESS,
-            wallet_private_key=WALLET_PRIVATE_KEY
-        )
+        self.client = hyperliquid.Exchange(api_url=API_URL)
 
-    def get_account(self):
-        return self.client.account_state()
+    def get_account(self, address):
+        # Devuelve el estado de la cuenta pública
+        return self.client.get_user_state(address)
 
     def get_ohlcv(self, symbol, interval, limit):
-        # El SDK usa pares tipo "BTCUSDT"
-        df = self.client.candles(
-            symbol=symbol + "USDT",
-            interval=interval,
-            limit=limit
-        )
-        return df
+        # Retorna velas OHLCV, por defecto 1m, 5m, etc.
+        return self.client.candles(symbol + "USDT", interval, limit)
 
     def get_order_book(self, symbol):
         return self.client.orderbook(symbol + "USDT")
 
     def get_price(self, symbol):
+        # Devuelve el precio mark, puede ajustarse a best_bid/best_ask si lo prefieres
         ticker = self.client.ticker(symbol + "USDT")
-        return {'price': ticker['last']}
-
-    def create_order(self, symbol, side, size):
-        # side: 'buy' o 'sell'
-        return self.client.market_order(
-            symbol=symbol + "USDT",
-            side=side,
-            size=size
-        )
+        return {'price': ticker['mark']}
