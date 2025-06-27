@@ -127,6 +127,21 @@ st.markdown("""
         text-align: center;
         margin-top: -10px;
     }
+    /* Botón de cerrar posición */
+    .btn-cerrar {
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .btn-cerrar:hover {
+        background-color: #c0392b;
+    }
     /* Mejoras estéticas generales */
     h1, h2, h3, h4 {
         color: #333;
@@ -137,11 +152,42 @@ st.markdown("""
         padding: 5px;
         margin-bottom: 20px;
     }
+    /* Mensaje de éxito */
+    .success-message {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+    }
+    /* Mensaje de error */
+    .error-message {
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Inicializar cliente de Hyperliquid
 client = HyperliquidClient()
+
+# Definir const MAX_RETRIES
+MAX_RETRIES = 3
+
+# Función para realizar intentos con reintentos
+def retry_api_call(func, *args, **kwargs):
+    for intento in range(1, MAX_RETRIES + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f"[INTENTO {intento}/{MAX_RETRIES}] Error en {func.__name__}: {e}")
+            if intento == MAX_RETRIES:
+                raise
+            else:
+                time.sleep(2)
 
 # Función para formatear números con separadores de miles
 def formatear_numero(numero, decimales=2):
@@ -178,7 +224,7 @@ def obtener_posiciones_hyperliquid():
     Implementación robusta que maneja la estructura específica de la API de Hyperliquid.
     """
     try:
-        account = client.get_account()
+        account = retry_api_call(client.get_account)
         
         # Verificar si tenemos la estructura esperada
         if not account or "assetPositions" not in account:
@@ -242,7 +288,8 @@ def obtener_posiciones_hyperliquid():
                     'size': abs(position_float),
                     'entryPrice': entry_price_float,
                     'unrealizedPnl': unrealized_pnl_float,
-                    'direction': direccion
+                    'direction': direccion,
+                    'raw_position': position_float  # Añadir el valor raw para cierre
                 }
                 posiciones_abiertas.append(posicion_formateada)
                 
@@ -257,6 +304,50 @@ def obtener_posiciones_hyperliquid():
         error_msg = f"Error al obtener posiciones: {str(e)}"
         print(error_msg)
         return []
+
+# Función para cerrar una posición
+def cerrar_posicion(symbol, position_amount):
+    """
+    Cierra una posición en Hyperliquid mediante orden de mercado
+    """
+    try:
+        # Determinar el lado (compra/venta) según la dirección de la posición
+        side = "sell" if float(position_amount) > 0 else "buy"
+        quantity = abs(float(position_amount))
+        
+        # Ejecutar la orden para cerrar la posición
+        order = retry_api_call(
+            client.create_order, 
+            symbol=symbol, 
+            side=side, 
+            size=quantity
+        )
+        
+        if order and "status" in order:
+            print(f"Posición cerrada para {symbol}: {order}")
+            
+            # Cancelar también cualquier orden TP pendiente
+            try:
+                if os.path.exists("tp_orders.json"):
+                    with open("tp_orders.json", "r") as f:
+                        tp_orders = json.load(f)
+                    
+                    if symbol in tp_orders and "order_id" in tp_orders[symbol]:
+                        client.cancel_order(symbol=symbol, order_id=tp_orders[symbol]["order_id"])
+                        print(f"Orden TP cancelada para {symbol}")
+                        
+                        # Eliminar del archivo
+                        del tp_orders[symbol]
+                        with open("tp_orders.json", "w") as f:
+                            json.dump(tp_orders, f)
+            except Exception as e:
+                print(f"Error cancelando orden TP: {e}")
+                
+            return True, f"Posición cerrada para {symbol}"
+        else:
+            return False, f"Error al cerrar posición para {symbol}"
+    except Exception as e:
+        return False, f"Error al cerrar posición para {symbol}: {e}"
 
 # Función para obtener historial reciente de trades
 def obtener_historial_trades(limit=10):
@@ -390,27 +481,59 @@ else:
 st.markdown('<div class="section-container">', unsafe_allow_html=True)
 st.header("Posiciones Abiertas")
 
+# Estado para mensajes de operaciones
+if "mensaje_cierre" not in st.session_state:
+    st.session_state.mensaje_cierre = None
+    st.session_state.tipo_mensaje = None
+
+# Mostrar mensajes de operaciones previas
+if st.session_state.mensaje_cierre:
+    mensaje_clase = "success-message" if st.session_state.tipo_mensaje == "success" else "error-message"
+    st.markdown(f'<div class="{mensaje_clase}">{st.session_state.mensaje_cierre}</div>', unsafe_allow_html=True)
+    
+    # Limpiar mensaje después de mostrarlo
+    if st.session_state.get("auto_clear", False):
+        st.session_state.mensaje_cierre = None
+        st.session_state.tipo_mensaje = None
+    
 posiciones = obtener_posiciones_hyperliquid()
 if not posiciones:
     st.info("🧙‍♂️ No hay operaciones abiertas en este momento.")
 else:
     # Crear un DataFrame para mostrar las posiciones de manera más atractiva
     tabla_data = []
-    for pos in posiciones:
+    for i, pos in enumerate(posiciones):
         pnl_class = "profit" if pos['unrealizedPnl'] >= 0 else "loss"
         direccion_class = "badge-long" if pos['direction'] == "LONG" else "badge-short"
+        
+        # Agregar el botón de cerrar como HTML
+        boton_cerrar = f'<button class="btn-cerrar" onclick="document.getElementById(\'cerrar-posicion-{i}\').click()">Cerrar</button>'
         
         tabla_data.append({
             "Símbolo": pos['symbol'],
             "Dirección": f'<span class="status-badge {direccion_class}">{pos["direction"]}</span>',
             "Tamaño": formatear_numero(pos['size'], 1),
             "Precio Entrada": formatear_numero(pos['entryPrice'], 5),
-            "PnL": f'<span class="{pnl_class}">{formatear_numero(pos["unrealizedPnl"], 2)}</span>'
+            "PnL": f'<span class="{pnl_class}">{formatear_numero(pos["unrealizedPnl"], 2)}</span>',
+            "Acción": boton_cerrar
         })
     
     # Crear DataFrame y mostrar como tabla HTML estilizada
     df = pd.DataFrame(tabla_data)
     st.markdown(formato_tabla_html(df), unsafe_allow_html=True)
+    
+    # Botones ocultos para cerrar posiciones
+    for i, pos in enumerate(posiciones):
+        if st.button(f"Cerrar posición {pos['symbol']}", key=f"cerrar-posicion-{i}", help=f"Cerrar posición {pos['direction']} en {pos['symbol']}", type="primary"):
+            success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+            if success:
+                st.session_state.mensaje_cierre = f"✅ {mensaje}"
+                st.session_state.tipo_mensaje = "success"
+            else:
+                st.session_state.mensaje_cierre = f"❌ {mensaje}"
+                st.session_state.tipo_mensaje = "error"
+            st.session_state.auto_clear = True
+            st.experimental_rerun()  # Refrescar la página
 
 st.markdown('</div>', unsafe_allow_html=True)
 
