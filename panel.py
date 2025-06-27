@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilo CSS personalizado
+# Estilo CSS personalizado con colores más atractivos y mejor formato
 st.markdown("""
 <style>
     .main-header {
@@ -27,10 +27,11 @@ st.markdown("""
         margin-bottom: 1rem;
         color: #1E88E5;
     }
-    .metric-card {
+    .dashboard-card {
         background-color: #f8f9fa;
         border-radius: 10px;
-        padding: 20px;
+        padding: 15px;
+        margin: 10px 0px;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     }
     .metric-value {
@@ -38,14 +39,18 @@ st.markdown("""
         font-weight: 700;
     }
     .metric-label {
-        font-size: 1rem;
+        font-size: 0.9rem;
         color: #6c757d;
+        margin-top: -5px;
     }
     .profit {
-        color: #28a745;
+        color: #28a745 !important;
     }
     .loss {
-        color: #dc3545;
+        color: #dc3545 !important;
+    }
+    .neutral {
+        color: #6c757d !important;
     }
     .info-text {
         background-color: #e3f2fd;
@@ -53,14 +58,84 @@ st.markdown("""
         border-radius: 5px;
         font-size: 0.9rem;
     }
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 1.2rem;
+    /* Estilos para tablas */
+    .dataframe {
+        width: 100%;
+        border-collapse: collapse;
     }
-    div[data-testid="stVerticalBlock"] div[style*="flex-direction: column;"] div[data-testid="stVerticalBlock"] {
+    .dataframe th {
+        background-color: #f1f3f5;
+        color: #495057;
+        font-weight: 600;
+        text-align: left;
+        padding: 12px 8px;
+        border-bottom: 2px solid #dee2e6;
+    }
+    .dataframe td {
+        padding: 12px 8px;
+        border-bottom: 1px solid #dee2e6;
+        font-size: 0.95rem;
+    }
+    .dataframe tr:nth-child(even) {
         background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 0.5rem;
+    }
+    /* Estilos para botones de símbolos */
+    div.row-widget.stButton {
+        background-color: #f0f2f5;
+        border-radius: 6px;
+        padding: 0px;
+        margin-bottom: 5px;
+        transition: all 0.3s ease;
+    }
+    div.row-widget.stButton:hover {
+        background-color: #e0e7ff;
+        transform: scale(1.02);
+    }
+    div.row-widget.stButton > button {
+        width: 100%;
+        border: none;
+        background: transparent;
+        font-weight: 500;
+        color: #444;
+        padding: 5px 0px;
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 12px;
+    }
+    .badge-long {
+        background-color: #d3f9d8;
+        color: #0b7724;
+    }
+    .badge-short {
+        background-color: #ffe3e3;
+        color: #c92a2a;
+    }
+    .saldo-grande {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #1E88E5;
+        text-align: center;
+        margin: 15px 0;
+    }
+    .saldo-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+        text-align: center;
+        margin-top: -10px;
+    }
+    /* Mejoras estéticas generales */
+    h1, h2, h3, h4 {
+        color: #333;
+        margin-top: 20px;
+        margin-bottom: 15px;
+    }
+    .section-container {
+        padding: 5px;
+        margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -237,78 +312,131 @@ def cargar_configuracion():
             "max_tp_pct": 0.02
         }
 
+# Función para dar formato a las tablas HTML
+def formato_tabla_html(df, titulo_columnas=None):
+    """
+    Aplica estilos mejorados a un DataFrame y lo convierte a HTML
+    """
+    # Si se proporcionaron títulos de columnas personalizados
+    if titulo_columnas:
+        df.columns = titulo_columnas
+    
+    # Aplicar estilos según el tipo de datos (especialmente para PnL)
+    styles = []
+    for col in df.columns:
+        if col in ['PnL', 'unrealizedPnl']:
+            styles.append({
+                'selector': f'td:nth-child({list(df.columns).index(col) + 1})',
+                'props': [
+                    ('color', lambda x: 'green' if x > 0 else 'red' if x < 0 else 'inherit')
+                ]
+            })
+    
+    # Convertir a HTML con estilos
+    tabla_html = df.to_html(classes='dataframe', escape=False, index=False)
+    return tabla_html
+
 # Encabezado principal
 st.markdown('<h1 class="main-header">📊 Monitor de Trading Hyperliquid</h1>', unsafe_allow_html=True)
 
 # Mostrar hora de actualización
-col_update, col_uptime = st.columns([3, 2])
-with col_update:
-    st.write(f"Actualización cada 30s | Tiempo activo: {tiempo_actividad_bot() if tiempo_actividad_bot() else 'N/A'}")
+tiempo_activo = tiempo_actividad_bot() if tiempo_actividad_bot() else timedelta(0)
+st.write(f"Actualización cada 30s | Tiempo activo: {str(tiempo_activo).split('.')[0]}")
 
 # Cargar configuración
 config = cargar_configuracion()
 
-# Mostrar métricas de configuración
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("TP", f"{config['atr_tp_mult']}×ATR", help="Multiplicador de ATR para el Take Profit")
-    st.caption(f"(máx {config['max_tp_pct']*100}%)")
-with col2:
-    st.metric("SL", "NO", help="Sin Stop Loss automático")
-with col3:
-    st.metric("APALANCAMIENTO", f"{config['leverage']}×", help="Nivel de apalancamiento utilizado")
-with col4:
-    st.metric("MARGEN/TRADE", f"{config['margin_per_trade']}", help="Margen utilizado por operación")
-    st.caption("USDT")
+# Contenedor para métricas/configuración
+with st.container():
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        with st.container():
+            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+            st.metric("TP", f"{config['atr_tp_mult']}×ATR")
+            st.markdown(f'<div class="metric-label">(máx {config["max_tp_pct"]*100}%)</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with col2:
+        with st.container():
+            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+            st.metric("SL", "NO")
+            st.markdown('<div class="metric-label">Sin Stop Loss</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with col3:
+        with st.container():
+            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+            st.metric("APALANCAMIENTO", f"{config['leverage']}×")
+            st.markdown('<div class="metric-label">Nivel de apalancamiento</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+    with col4:
+        with st.container():
+            st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+            st.metric("MARGEN/TRADE", f"{config['margin_per_trade']}")
+            st.markdown('<div class="metric-label">USDT</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-# Mostrar saldo
+# Mostrar saldo en formato grande y atractivo
 saldo_actual = obtener_saldo()
 if saldo_actual is not None:
-    st.markdown(f"<h2 style='text-align: center; color: #1E88E5;'>{formatear_numero(saldo_actual, 2)} USDT <span style='font-size: 0.8rem; color: gray;'>Saldo actual</span></h2>", unsafe_allow_html=True)
+    st.markdown(f'<div class="saldo-grande">{formatear_numero(saldo_actual, 2)} USDT</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="saldo-label">Saldo actual</div>', unsafe_allow_html=True)
 else:
     st.warning("No se pudo obtener el saldo actual.")
 
 # Posiciones abiertas
+st.markdown('<div class="section-container">', unsafe_allow_html=True)
 st.header("Posiciones Abiertas")
-try:
-    posiciones = obtener_posiciones_hyperliquid()
-    if not posiciones:
-        st.info("🧙‍♂️ No hay operaciones abiertas en este momento.")
-    else:
-        # Crear una tabla con las posiciones
-        tabla_data = []
-        for pos in posiciones:
-            pnl_class = "profit" if pos['unrealizedPnl'] >= 0 else "loss"
-            pnl_formatted = formatear_numero(pos['unrealizedPnl'], 2)
-            tabla_data.append({
-                "Símbolo": pos['symbol'],
-                "Dirección": pos['direction'],
-                "Tamaño": formatear_numero(pos['size'], 1),
-                "Precio Entrada": formatear_numero(pos['entryPrice'], 5),
-                "PnL": f"<span class='{pnl_class}'>{pnl_formatted}</span>"
-            })
+
+posiciones = obtener_posiciones_hyperliquid()
+if not posiciones:
+    st.info("🧙‍♂️ No hay operaciones abiertas en este momento.")
+else:
+    # Crear un DataFrame para mostrar las posiciones de manera más atractiva
+    tabla_data = []
+    for pos in posiciones:
+        pnl_class = "profit" if pos['unrealizedPnl'] >= 0 else "loss"
+        direccion_class = "badge-long" if pos['direction'] == "LONG" else "badge-short"
         
-        # Convertir a DataFrame y mostrar
-        df = pd.DataFrame(tabla_data)
-        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-except Exception as e:
-    st.error(f"Error al obtener posiciones: {str(e)}")
+        tabla_data.append({
+            "Símbolo": pos['symbol'],
+            "Dirección": f'<span class="status-badge {direccion_class}">{pos["direction"]}</span>',
+            "Tamaño": formatear_numero(pos['size'], 1),
+            "Precio Entrada": formatear_numero(pos['entryPrice'], 5),
+            "PnL": f'<span class="{pnl_class}">{formatear_numero(pos["unrealizedPnl"], 2)}</span>'
+        })
+    
+    # Crear DataFrame y mostrar como tabla HTML estilizada
+    df = pd.DataFrame(tabla_data)
+    st.markdown(formato_tabla_html(df), unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Pares disponibles
+st.markdown('<div class="section-container">', unsafe_allow_html=True)
 st.header("Pares Disponibles")
 simbolos = obtener_simbolos_disponibles()
+
 if simbolos:
-    # Crear una visualización de botones para los símbolos
-    num_cols = 5
+    # Crear botones más atractivos para los símbolos
+    # Determinar número de columnas según cantidad de símbolos
+    num_simbolos = len(simbolos)
+    num_cols = min(5, max(2, num_simbolos // 4 + 1))
+    
     cols = st.columns(num_cols)
     for i, simbolo in enumerate(simbolos):
         with cols[i % num_cols]:
             st.button(simbolo, key=f"symbol_{simbolo}")
 else:
     st.info("No se encontraron símbolos disponibles.")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Historial de operaciones
+st.markdown('<div class="section-container">', unsafe_allow_html=True)
 st.header("Historial de Operaciones")
+
 trades = obtener_historial_trades()
 if trades:
     # Crear una tabla para el historial
@@ -317,20 +445,23 @@ if trades:
         fecha = datetime.fromisoformat(trade.get('fecha', '')) if 'fecha' in trade else datetime.now()
         pnl_class = "profit" if trade.get('pnl', 0) >= 0 else "loss"
         pnl_formatted = formatear_numero(trade.get('pnl', 0), 2)
+        tipo_class = "badge-long" if trade.get('tipo', '').upper() == "BUY" else "badge-short"
+        
         historial_data.append({
             "Fecha": fecha.strftime("%Y-%m-%d %H:%M"),
             "Símbolo": trade.get('symbol', ''),
-            "Tipo": trade.get('tipo', ''),
+            "Tipo": f'<span class="status-badge {tipo_class}">{trade.get("tipo", "").upper()}</span>',
             "Entrada": formatear_numero(trade.get('entry', 0), 5),
             "Salida": formatear_numero(trade.get('exit', 0), 5),
-            "PnL": f"<span class='{pnl_class}'>{pnl_formatted}</span>"
+            "PnL": f'<span class="{pnl_class}">{pnl_formatted}</span>'
         })
     
     # Convertir a DataFrame y mostrar
     df_hist = pd.DataFrame(historial_data)
-    st.write(df_hist.to_html(escape=False, index=False), unsafe_allow_html=True)
+    st.markdown(formato_tabla_html(df_hist), unsafe_allow_html=True)
 else:
     st.info("No hay historial de operaciones disponible.")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Función para actualizar automáticamente la página
 st.markdown(
