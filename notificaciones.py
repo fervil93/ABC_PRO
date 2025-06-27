@@ -1,17 +1,14 @@
-import requests
 from secret import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+import requests
 
 def enviar_telegram(mensaje, tipo="info"):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    iconos = {
-        "info": "ℹ️",
-        "error": "❗️",
-        "open": "🟢",
-        "close": "🔴",
-        "daily": "📊"
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "HTML"
     }
-    icono = iconos.get(tipo, "")
     try:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": f"{icono} {mensaje}"})
+        requests.post(url, data=data)
     except Exception as e:
-        print(f"Error enviando mensaje Telegram: {e}")
+        print(f"Error enviando notificación Telegram: {e}")
