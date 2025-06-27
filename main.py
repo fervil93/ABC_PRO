@@ -30,15 +30,22 @@ MIN_POTENTIAL_PROFIT = 0.5
 
 SPREAD_MAX_PCT_POR_SIMBOLO = {
     "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 1.5, "XRP": 2.0, "ADA": 1.5,
-    "DOGE": 1.5, "AVAX": 1.5, "TON": 1.5, "LINK": 1.5,
+    "DOGE": 1.5, "AVAX": 1.5, "LINK": 1.5, "MATIC": 1.5, "ARB": 1.5, "SUI": 1.5, 
+    "PEPE": 2.0, "OP": 1.5, "NEAR": 1.5, "DOT": 1.5, "ATOM": 1.5, "LTC": 1.5, 
+    "SHIB": 2.0, "UNI": 1.5
 }
 MULTIPLICADOR_VOL_POR_SIMBOLO = {
     "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 0.8, "XRP": 0.8,
-    "ADA": 0.8, "DOGE": 0.8, "AVAX": 0.8, "TON": 0.8, "LINK": 0.8,
+    "ADA": 0.8, "DOGE": 0.8, "AVAX": 0.8, "LINK": 0.8, "MATIC": 0.8, 
+    "ARB": 0.8, "SUI": 0.8, "PEPE": 0.7, "OP": 0.8, "NEAR": 0.8, 
+    "DOT": 0.8, "ATOM": 0.8, "LTC": 0.8, "SHIB": 0.7, "UNI": 0.8
 }
 BREAKOUT_ATR_MULT_POR_SIMBOLO = {
     "BTC": 0.1, "ETH": 0.1, "BNB": 0.1, "SOL": 0.05, "XRP": 0.05,
-    "ADA": 0.05, "DOGE": 0.05, "AVAX": 0.05, "TON": 0.05, "LINK": 0.05,
+    "ADA": 0.05, "DOGE": 0.05, "AVAX": 0.05, "LINK": 0.05,
+    "MATIC": 0.05, "ARB": 0.05, "SUI": 0.05, "PEPE": 0.05, "OP": 0.05,
+    "NEAR": 0.05, "DOT": 0.05, "ATOM": 0.05, "LTC": 0.05, "SHIB": 0.05,
+    "UNI": 0.05
 }
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
@@ -55,6 +62,32 @@ resumen_diario = {
     "pnl_total": 0.0,
     "ultimo_envio": datetime.now().date()
 }
+
+def obtener_simbolos_disponibles():
+    """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
+    # Lista ampliada de los 20 pares con mayor capitalización en Hyperliquid
+    todos_simbolos = [
+        'BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'ARB', 'MATIC', 'SUI', 'PEPE', 'OP', 
+        'XRP', 'AVAX', 'LINK', 'NEAR', 'DOT', 'ADA', 'ATOM', 'LTC', 'SHIB', 'UNI'
+    ]
+    
+    print("Verificando disponibilidad de símbolos en Hyperliquid...")
+    
+    simbolos_disponibles = []
+    for symbol in todos_simbolos:
+        try:
+            # Intenta obtener precio actual para verificar disponibilidad
+            precio = client.get_price(symbol)
+            if precio and precio.get('mid'):
+                simbolos_disponibles.append(symbol)
+                print(f"✅ {symbol} disponible - Precio: {precio.get('mid')}")
+            else:
+                print(f"❌ {symbol} no disponible o sin liquidez")
+        except Exception as e:
+            print(f"❌ Error verificando {symbol}: {str(e)}")
+    
+    enviar_telegram(f"🔍 Símbolos disponibles para operar ({len(simbolos_disponibles)}/{len(todos_simbolos)}): {', '.join(simbolos_disponibles)}", tipo="info")
+    return simbolos_disponibles
 
 def retry_api_call(func, *args, **kwargs):
     for intento in range(1, MAX_RETRIES + 1):
@@ -345,7 +378,12 @@ if __name__ == "__main__":
     try:
         enviar_telegram("🚀 Bot arrancado correctamente y en ejecución.", tipo="info")
 
-        simbolos = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'TON', 'LINK']
+        simbolos = obtener_simbolos_disponibles()  # Ahora obtenemos los símbolos automáticamente
+        
+        if not simbolos:
+            enviar_telegram("⚠️ No se encontraron símbolos disponibles para operar. El bot se detendrá.", tipo="error")
+            exit(1)
+            
         intervalo_segundos = 5
         tiempo_inicio = datetime.now()
         last_trade_time = None
