@@ -64,7 +64,7 @@ resumen_diario = {
     "ultimo_envio": datetime.now().date()
 }
 
-def obtener_simbolos_disponibles(enviar_mensaje=False):
+def obtener_simbolos_disponibles():
     """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
     # Lista ampliada de los 20 pares con mayor capitalización en Hyperliquid
     todos_simbolos = [
@@ -425,6 +425,23 @@ if __name__ == "__main__":
 
         while True:
             print(f"\nTiempo Transcurrido: {datetime.now() - tiempo_inicio}")
+            
+            # Añadir esta sección para obtener y registrar el saldo
+            try:
+                account = retry_api_call(client.get_account)
+                if account and "equity" in account:
+                    saldo_usdt = float(account["equity"])
+                    print(f"🏦 Saldo actual: {saldo_usdt:.4f} USDT")
+                    # Registra en archivo para que el panel lo pueda leer
+                    with open("ultimo_saldo.txt", "w") as f:
+                        f.write(f"{saldo_usdt}")
+                else:
+                    print("❌ No se pudo obtener el saldo. Respuesta de API:", account)
+                    # Registra las claves disponibles para depuración
+                    if account and isinstance(account, dict):
+                        print("Claves disponibles en la respuesta:", account.keys())
+            except Exception as e:
+                print(f"❌ Error obteniendo saldo: {e}")
             
             # Reevaluar los símbolos disponibles periódicamente (pero sin enviar mensajes)
             if verificar_tiempo_para_reevaluar():
