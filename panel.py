@@ -91,6 +91,18 @@ def leer_simbolos_disponibles_desde_archivo():
         pass
     return None
 
+# Método alternativo para leer el saldo desde un archivo
+def get_balance_from_file():
+    """Método alternativo para leer el saldo desde un archivo"""
+    try:
+        if os.path.exists("ultimo_saldo.txt"):
+            with open("ultimo_saldo.txt", "r") as f:
+                balance = float(f.read().strip())
+                return balance
+    except Exception:
+        pass
+    return 0
+
 # Crear cliente con manejo de errores
 @st.cache_resource
 def get_client():
@@ -234,22 +246,43 @@ def obtener_simbolos_disponibles():
     return []
 
 def get_account_balance():
-    # Usar cache para reducir llamadas API
-    if (datetime.now() - cache["last_balance_check"]).total_seconds() < 60:
-        return cache["balance"]
-    
     try:
+        # Usar cache para reducir llamadas API
+        if (datetime.now() - cache["last_balance_check"]).total_seconds() < 60:
+            return cache["balance"]
+        
+        # Intentar obtener datos de la cuenta
         account = api_call_with_retry(client.get_account)
-        if account and "equity" in account:
-            balance = float(account["equity"])
-            cache["last_balance_check"] = datetime.now()
-            cache["balance"] = balance
-            cache["api_errors"] = 0  # Reset error counter on success
-            return balance
-        return 0
+        
+        # Depurar respuesta para identificar el problema
+        if account is None:
+            st.warning("⚠️ No se pudo obtener información de la cuenta. La respuesta es None.")
+            # Intentar leer desde archivo (alternativa)
+            return get_balance_from_file()
+            
+        # Verificar claves en la respuesta
+        available_keys = list(account.keys()) if isinstance(account, dict) else "No es un diccionario"
+        
+        if "equity" not in account:
+            st.warning(f"⚠️ La clave 'equity' no se encontró en la respuesta. Claves disponibles: {available_keys}")
+            # Intentar leer desde archivo (alternativa)
+            return get_balance_from_file()
+        
+        # Si todo está bien, procesar el saldo
+        balance = float(account["equity"])
+        cache["last_balance_check"] = datetime.now()
+        cache["balance"] = balance
+        cache["api_errors"] = 0  # Reset error counter on success
+        
+        # También guardar en archivo para consistencia
+        with open("ultimo_saldo.txt", "w") as f:
+            f.write(f"{balance}")
+            
+        return balance
     except Exception as e:
-        st.error(f"Error obteniendo saldo: {e}")
-        return 0
+        st.error(f"Error obteniendo saldo: {str(e)}")
+        # Intentar leer desde archivo (alternativa)
+        return get_balance_from_file()
 
 # --- AUTORREFRESCO MENOS FRECUENTE ---
 refresh_interval = 30  # segundos
