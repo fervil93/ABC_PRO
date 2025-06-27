@@ -48,6 +48,33 @@ BREAKOUT_ATR_MULT_POR_SIMBOLO = {
     "UNI": 0.05
 }
 
+# Definir la precisión para cada símbolo según las reglas de Hyperliquid
+# Para tokens de bajo precio (DOGE, SHIB, etc.) usamos 0 (enteros)
+# Para tokens de precio medio (SOL, ARB, etc.) usamos 1 decimal
+# Para tokens de alto precio (BTC, ETH) usamos más precisión
+PRECISION_POR_SIMBOLO = {
+    "BTC": 3,  # 0.001 BTC
+    "ETH": 2,  # 0.01 ETH
+    "BNB": 2,  # 0.01 BNB
+    "SOL": 1,  # 0.1 SOL
+    "XRP": 0,  # 1 XRP
+    "ADA": 0,  # 1 ADA
+    "DOGE": 0, # 1 DOGE
+    "AVAX": 1, # 0.1 AVAX
+    "LINK": 1, # 0.1 LINK
+    "MATIC": 0, # 1 MATIC
+    "ARB": 0,  # 1 ARB
+    "SUI": 0,  # 1 SUI
+    "PEPE": 0, # 1 PEPE
+    "OP": 0,   # 1 OP
+    "NEAR": 0, # 1 NEAR
+    "DOT": 1,  # 0.1 DOT
+    "ATOM": 1, # 0.1 ATOM
+    "LTC": 2,  # 0.01 LTC
+    "SHIB": 0, # 1 SHIB
+    "UNI": 1   # 0.1 UNI
+}
+
 ATR_LEVELS_FILE = "trade_levels_atr.json"
 COOLDOWN_MINUTES = 15
 SPREAD_MAX_PCT = 1
@@ -291,12 +318,40 @@ def calcular_tp_atr(entry_price, atr, direction, fee_rate=0.001):
     return tp
 
 def calcular_cantidad_valida(symbol, monto_usdt):
+    """
+    Calcula la cantidad válida para una orden en Hyperliquid asegurando
+    que cumpla con los requisitos de precisión.
+    """
     try:
         precio_actual = obtener_precio_hyperliquid(symbol)
         if precio_actual is None:
             return None
+            
+        # Obtener la precisión adecuada para este símbolo
+        precision = PRECISION_POR_SIMBOLO.get(symbol, 0)
+        
+        # Calcular la cantidad base
         cantidad_calculada = monto_usdt / precio_actual
-        return cantidad_calculada
+        
+        # Para los tokens que requieren enteros (DOGE, ARB, etc.)
+        if precision == 0:
+            cantidad_redondeada = int(cantidad_calculada)
+            # Asegurarnos de que la cantidad no sea cero
+            if cantidad_redondeada == 0:
+                cantidad_redondeada = 1
+        else:
+            # Para tokens que permiten decimales, redondeamos a la precisión adecuada
+            cantidad_redondeada = round(cantidad_calculada, precision)
+            # Asegurarnos de que la cantidad no sea cero
+            if cantidad_redondeada == 0:
+                cantidad_redondeada = 10**(-precision)
+        
+        # Convertir a float para asegurar compatibilidad con la API
+        cantidad_redondeada = float(cantidad_redondeada)
+        
+        print(f"[{symbol}] Cantidad calculada: {cantidad_calculada}, ajustada a precisión {precision}: {cantidad_redondeada}")
+        return cantidad_redondeada
+        
     except Exception as e:
         logging.error(f"Error al calcular cantidad válida para {symbol}: {e}", exc_info=True)
         return None
@@ -449,7 +504,7 @@ if __name__ == "__main__":
                         saldo_usdt = float(account["marginSummary"]["accountValue"])
                     
                     if saldo_usdt is not None:
-                        print(f"[SALDO] Saldo actual: {saldo_usdt:.4f} USDT")
+                        print(f"🏦 Saldo actual: {saldo_usdt:.4f} USDT")
                         # Registra en archivo para que el panel lo pueda leer
                         with open("ultimo_saldo.txt", "w") as f:
                             f.write(f"{saldo_usdt}")
