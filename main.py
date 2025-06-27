@@ -76,6 +76,7 @@ PRECISION_POR_SIMBOLO = {
 }
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
+TP_ORDERS_FILE = "tp_orders.json"
 COOLDOWN_MINUTES = 5  # Reducido de 15 a 5 minutos
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
@@ -83,6 +84,7 @@ RETRY_SLEEP = 2
 VOLATILITY_WINDOW = 10
 VOLATILITY_UMBRAL = 0.015
 REEVALUACION_SIMBOLOS_HORAS = 6  # Frecuencia para reevaluar símbolos
+DEBUG = False  # Controla el verbose
 
 resumen_diario = {
     "trades_abiertos": 0,
@@ -90,6 +92,14 @@ resumen_diario = {
     "pnl_total": 0.0,
     "ultimo_envio": datetime.now().date()
 }
+
+def debug_print(mensaje, *args):
+    """Función para imprimir mensajes de depuración solo si DEBUG está activado"""
+    if DEBUG:
+        if args:
+            print(mensaje, *args)
+        else:
+            print(mensaje)
 
 def obtener_simbolos_disponibles():
     """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
@@ -158,7 +168,7 @@ def retry_api_call(func, *args, **kwargs):
             return func(*args, **kwargs)
         except Exception as e:
             msg = f"[INTENTO {intento}/{MAX_RETRIES}] Error en {func.__name__}: {e}"
-            print(msg)
+            debug_print(msg)
             logging.error(msg, exc_info=True)
             if intento == MAX_RETRIES:
                 # No enviamos notificaciones por errores de datos históricos
@@ -188,150 +198,98 @@ def guardar_niveles_atr(data):
         logging.error(f"Error guardando niveles ATR: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al guardar niveles ATR: {e}", tipo="error")
 
+def cargar_ordenes_tp():
+    """Carga las órdenes TP pendientes del archivo"""
+    try:
+        if os.path.exists(TP_ORDERS_FILE):
+            with open(TP_ORDERS_FILE, "r") as f:
+                return json.load(f)
+        else:
+            return {}
+    except Exception as e:
+        logging.error(f"Error cargando órdenes TP: {e}", exc_info=True)
+        return {}
+
+def guardar_ordenes_tp(data):
+    """Guarda las órdenes TP pendientes al archivo"""
+    try:
+        with open(TP_ORDERS_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        logging.error(f"Error guardando órdenes TP: {e}", exc_info=True)
+
 def ajustar_precision(valor, precision):
     return float(f"{valor:.{precision}f}") if precision > 0 else float(int(valor))
 
 def obtener_posiciones_hyperliquid():
+    """
+    Obtiene las posiciones abiertas en Hyperliquid y las formatea para uso del bot.
+    Implementación robusta que maneja la estructura específica de la API de Hyperliquid.
+    """
     try:
         account = retry_api_call(client.get_account)
-        # Registrar la respuesta completa para depuración
-        if account:
-            print(f"Respuesta de cuenta: {type(account)}")
-            # Para depuración, imprimir los primeros niveles de la estructura
-            if isinstance(account, dict):
-                print(f"Claves principales: {list(account.keys())}")
-                if "assetPositions" in account:
-                    print(f"Número de posiciones: {len(account['assetPositions'])}")
-                    # Imprimir la primera posición completa para depuración
-                    if len(account['assetPositions']) > 0:
-                        print(f"Primera posición completa: {account['assetPositions'][0]}")
         
-        # La estructura de account contiene 'assetPositions'
+        # Verificar si tenemos la estructura esperada
         if not account or "assetPositions" not in account:
             print("No se encontró 'assetPositions' en la respuesta de la API")
             return []
         
+        # Lista para almacenar posiciones formateadas
         posiciones_abiertas = []
-        for i, posicion_item in enumerate(account["assetPositions"]):
+        
+        for item in account["assetPositions"]:
             try:
-                print(f"Procesando posición {i+1}...")
-                
-                # Si 'position' está en las claves y es un diccionario, extraer de ahí
-                if 'position' in posicion_item and isinstance(posicion_item['position'], dict):
-                    p = posicion_item['position']
-                    print(f"Extrayendo de posicion_item['position']: {p}")
+                # Si position está en las claves y es un diccionario, extraer de ahí
+                if 'position' in item and isinstance(item['position'], dict):
+                    p = item['position']
                 else:
-                    p = posicion_item
-                    print(f"Usando posicion_item directamente: {p}")
+                    p = item
                 
                 # Extraer el símbolo/asset
                 symbol = ""
                 for key in ['coin', 'asset', 'symbol']:
                     if key in p:
                         symbol = p[key]
-                        print(f"Símbolo encontrado en '{key}': {symbol}")
+                        debug_print(f"Símbolo encontrado en '{key}': {symbol}")
                         break
                 
                 if not symbol:
-                    print(f"[ADVERTENCIA] No se pudo encontrar símbolo para la posición {i+1}")
-                    # Intentar extraer más información para depuración
-                    if isinstance(p, dict):
-                        print(f"Claves disponibles: {list(p.keys())}")
+                    debug_print("No se pudo encontrar símbolo para la posición")
                     continue
                 
-                # Intentar extraer el tamaño de la posición
+                # Extraer el tamaño de la posición
                 position_float = None
-                for pos_key in ['szi', 'size', 'position', 'amount', 'qty']:
-                    if pos_key in p:
-                        if isinstance(p[pos_key], dict):
-                            for val_key in ['value', 'amount', 'size']:
-                                if val_key in p[pos_key]:
-                                    try:
-                                        position_float = float(p[pos_key][val_key])
-                                        print(f"[{symbol}] Valor de posición extraído de {pos_key}.{val_key}: {position_float}")
-                                        break
-                                    except (ValueError, TypeError) as e:
-                                        print(f"[{symbol}] Error convirtiendo {pos_key}.{val_key}: {e}")
-                        else:
-                            try:
-                                position_float = float(p[pos_key])
-                                print(f"[{symbol}] Valor de posición extraído de {pos_key}: {position_float}")
-                                break
-                            except (ValueError, TypeError) as e:
-                                print(f"[{symbol}] Error convirtiendo {pos_key}: {e}")
-                
-                # Si no encontramos valor de posición, intentarlo desde el item principal
-                if position_float is None and 'position' in posicion_item and not isinstance(posicion_item['position'], dict):
+                if 'szi' in p:
                     try:
-                        position_float = float(posicion_item['position'])
-                        print(f"[{symbol}] Valor de posición extraído del item principal: {position_float}")
+                        position_float = float(p['szi'])
+                        debug_print(f"[{symbol}] Valor de posición extraído de szi: {position_float}")
                     except (ValueError, TypeError) as e:
-                        print(f"[{symbol}] Error convirtiendo posición del item principal: {e}")
-                
-                # Si aún no tenemos valor, intentar buscar en el tipo
-                if position_float is None and 'type' in posicion_item:
-                    print(f"[{symbol}] Intentando extraer información del tipo: {posicion_item['type']}")
-                    if posicion_item['type'] == 'isolated':
-                        # Para posiciones aisladas, el símbolo podría estar en el tipo
-                        for key in ['coin', 'asset', 'symbol']:
-                            if key in posicion_item:
-                                symbol = posicion_item[key]
-                                print(f"[Actualizado] Símbolo encontrado en posicion_item['{key}']: {symbol}")
-                                break
-                
-                # Si todavía no tenemos posición, descartar este item
-                if position_float is None:
-                    print(f"[{symbol}] No se pudo extraer un valor numérico para la posición")
-                    continue
+                        debug_print(f"[{symbol}] Error convirtiendo szi: {e}")
                 
                 # Solo procesar posiciones no-cero
-                if abs(position_float) < 0.0001:
-                    print(f"[{symbol}] Posición demasiado pequeña: {position_float}, omitiendo")
+                if position_float is None or abs(position_float) < 0.0001:
+                    debug_print(f"[{symbol}] Posición nula o demasiado pequeña: {position_float}")
                     continue
                 
-                # Obtener precio de entrada
+                # Extraer precio de entrada
                 entry_price_float = 0
-                for entry_key in ['entryPx', 'entryPrice', 'avgPrice', 'price']:
-                    if entry_key in p:
-                        if isinstance(p[entry_key], dict):
-                            for val_key in ['value', 'price', 'amount']:
-                                if val_key in p[entry_key]:
-                                    try:
-                                        entry_price_float = float(p[entry_key][val_key])
-                                        print(f"[{symbol}] Precio de entrada extraído de {entry_key}.{val_key}: {entry_price_float}")
-                                        break
-                                    except (ValueError, TypeError) as e:
-                                        print(f"[{symbol}] Error convirtiendo {entry_key}.{val_key}: {e}")
-                        else:
-                            try:
-                                entry_price_float = float(p[entry_key])
-                                print(f"[{symbol}] Precio de entrada extraído de {entry_key}: {entry_price_float}")
-                                break
-                            except (ValueError, TypeError) as e:
-                                print(f"[{symbol}] Error convirtiendo {entry_key}: {e}")
+                if 'entryPx' in p:
+                    try:
+                        entry_price_float = float(p['entryPx'])
+                        debug_print(f"[{symbol}] Precio de entrada extraído de entryPx: {entry_price_float}")
+                    except (ValueError, TypeError) as e:
+                        debug_print(f"[{symbol}] Error convirtiendo entryPx: {e}")
                 
-                # Obtener PnL
+                # Extraer PnL
                 unrealized_pnl_float = 0
-                for pnl_key in ['unrealizedPnl', 'pnl', 'unrealizedProfit']:
-                    if pnl_key in p:
-                        if isinstance(p[pnl_key], dict):
-                            for val_key in ['value', 'amount']:
-                                if val_key in p[pnl_key]:
-                                    try:
-                                        unrealized_pnl_float = float(p[pnl_key][val_key])
-                                        print(f"[{symbol}] PnL extraído de {pnl_key}.{val_key}: {unrealized_pnl_float}")
-                                        break
-                                    except (ValueError, TypeError) as e:
-                                        print(f"[{symbol}] Error convirtiendo {pnl_key}.{val_key}: {e}")
-                        else:
-                            try:
-                                unrealized_pnl_float = float(p[pnl_key])
-                                print(f"[{symbol}] PnL extraído de {pnl_key}: {unrealized_pnl_float}")
-                                break
-                            except (ValueError, TypeError) as e:
-                                print(f"[{symbol}] Error convirtiendo {pnl_key}: {e}")
+                if 'unrealizedPnl' in p:
+                    try:
+                        unrealized_pnl_float = float(p['unrealizedPnl'])
+                        debug_print(f"[{symbol}] PnL extraído de unrealizedPnl: {unrealized_pnl_float}")
+                    except (ValueError, TypeError) as e:
+                        debug_print(f"[{symbol}] Error convirtiendo unrealizedPnl: {e}")
                 
-                # Añadir posición formateada
+                # Crear una posición formateada
                 posicion_formateada = {
                     'asset': symbol,
                     'position': position_float,
@@ -339,14 +297,12 @@ def obtener_posiciones_hyperliquid():
                     'unrealizedPnl': unrealized_pnl_float
                 }
                 posiciones_abiertas.append(posicion_formateada)
-                print(f"[{symbol}] Posición añadida: cantidad={position_float}, precio_entrada={entry_price_float}, pnl={unrealized_pnl_float}")
                 
             except Exception as e:
-                print(f"Error procesando posición {i+1}: {e}")
+                debug_print(f"Error procesando posición: {e}")
                 logging.error(f"Error procesando posición: {e}", exc_info=True)
                 continue
         
-        print(f"Total de posiciones procesadas: {len(posiciones_abiertas)}")
         return posiciones_abiertas
     except Exception as e:
         logging.error(f"Error al obtener posiciones Hyperliquid: {e}", exc_info=True)
@@ -506,7 +462,7 @@ def calcular_cantidad_valida(symbol, monto_usdt):
         # Convertir a float para asegurar compatibilidad con la API
         cantidad_redondeada = float(cantidad_redondeada)
         
-        print(f"[{symbol}] Cantidad calculada: {cantidad_calculada}, ajustada a precisión {precision}: {cantidad_redondeada}")
+        debug_print(f"[{symbol}] Cantidad calculada: {cantidad_calculada}, ajustada a precisión {precision}: {cantidad_redondeada}")
         return cantidad_redondeada
         
     except Exception as e:
@@ -541,26 +497,175 @@ def tiene_saldo_suficiente(margen):
         enviar_telegram(f"⚠️ Error verificando saldo suficiente: {e}", tipo="error")
         return False
 
-def ejecutar_orden_hyperliquid(symbol, side, quantity):
+def crear_orden_tp_hyperliquid(symbol, side, quantity, price):
+    """
+    Crea una orden límite para Take Profit en Hyperliquid
+    
+    Args:
+        symbol (str): Símbolo del par de trading
+        side (str): Dirección de la orden ('buy' o 'sell')
+        quantity (float): Cantidad a operar
+        price (float): Precio límite para la orden TP
+    
+    Returns:
+        dict: Respuesta de la API o None si hay error
+    """
     try:
-        order = retry_api_call(client.create_order, symbol=symbol, side=side.lower(), size=quantity)
-        if order and "status" in order:
-            print(f"Orden ejecutada: {order}")
-            return order
+        # La API de Hyperliquid utiliza create_order con type='limit' para órdenes límite
+        precision = PRECISION_POR_SIMBOLO.get(symbol, 0)
+        price_rounded = round(price, precision + 2)  # Más precisión para el precio
+        
+        # Para debugging
+        print(f"[{symbol}] Creando orden TP: {side} {quantity} @ {price_rounded}")
+        
+        orden = retry_api_call(
+            client.create_order,
+            symbol=symbol,
+            side=side.lower(),
+            size=quantity,
+            type='limit',
+            price=price_rounded
+        )
+        
+        if orden and "status" in orden:
+            print(f"[{symbol}] Orden TP creada: {orden}")
+            return orden
         else:
-            enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
-            logging.error(f"Error al ejecutar orden para {symbol}: {order}")
+            print(f"[{symbol}] Error al crear orden TP")
+            logging.error(f"Error al crear orden TP para {symbol}: {orden}")
             return None
     except Exception as e:
-        logging.error(f"Error al ejecutar orden para {symbol}: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol}: {e}", tipo="error")
+        print(f"[{symbol}] Error al crear orden TP: {e}")
+        logging.error(f"Error al crear orden TP para {symbol}: {e}", exc_info=True)
         return None
 
-def cerrar_posicion(symbol, positionAmt):
+def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
+    """
+    Ejecuta una orden de mercado y opcionalmente establece un TP
+    
+    Args:
+        symbol (str): Símbolo del par de trading
+        side (str): Dirección de la orden ('buy' o 'sell')
+        quantity (float): Cantidad a operar
+        tp_price (float, optional): Precio para el Take Profit
+    
+    Returns:
+        dict: Orden principal ejecutada
+        dict: Orden TP si se estableció
+    """
     try:
+        # Ejecutar la orden principal (market)
+        orden_principal = retry_api_call(
+            client.create_order, 
+            symbol=symbol, 
+            side=side.lower(), 
+            size=quantity,
+            type='market'  # Asegurarnos que sea orden de mercado
+        )
+        
+        if not orden_principal or "status" not in orden_principal:
+            enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol}", tipo="error")
+            return None, None
+            
+        print(f"[{symbol}] Orden principal ejecutada: {orden_principal}")
+        
+        # Si se especifica precio TP, crear una orden límite para el TP
+        orden_tp = None
+        if tp_price is not None:
+            # El lado del TP es opuesto a la entrada
+            tp_side = "sell" if side.lower() == "buy" else "buy"
+            
+            # Crear la orden TP
+            orden_tp = crear_orden_tp_hyperliquid(symbol, tp_side, quantity, tp_price)
+            
+            # Guardar el ID de la orden TP para seguimiento
+            if orden_tp:
+                # Guardar referencia de la orden TP
+                try:
+                    tp_orders = cargar_ordenes_tp()
+                    
+                    # Guardar relación entre símbolo y orden TP
+                    tp_orders[symbol] = {
+                        "order_id": orden_tp.get("order_id", ""),
+                        "price": tp_price,
+                        "size": quantity,
+                        "side": tp_side,
+                        "created_at": datetime.now().isoformat()
+                    }
+                    
+                    guardar_ordenes_tp(tp_orders)
+                    print(f"[{symbol}] Orden TP guardada en archivo de seguimiento")
+                except Exception as e:
+                    print(f"[{symbol}] Error guardando referencia de orden TP: {e}")
+            
+        return orden_principal, orden_tp
+    except Exception as e:
+        logging.error(f"Error al ejecutar orden con TP para {symbol}: {e}", exc_info=True)
+        enviar_telegram(f"⚠️ Error al ejecutar orden con TP para {symbol}: {e}", tipo="error")
+        return None, None
+
+def verificar_ordenes_tp_pendientes():
+    """
+    Verifica si hay órdenes TP pendientes y las sincroniza con las posiciones actuales
+    """
+    try:
+        # Cargar órdenes TP pendientes
+        tp_orders = cargar_ordenes_tp()
+        
+        if not tp_orders:
+            return
+            
+        # Obtener posiciones actuales
+        posiciones = obtener_posiciones_hyperliquid()
+        simbolos_con_posicion = [pos['asset'] for pos in posiciones]
+        
+        # Verificar órdenes pendientes
+        ordenes_activas = []
+        for symbol, order_info in tp_orders.items():
+            # Si ya no hay posición para este símbolo, cancelar la orden TP
+            if symbol not in simbolos_con_posicion:
+                try:
+                    if "order_id" in order_info:
+                        client.cancel_order(symbol=symbol, order_id=order_info["order_id"])
+                        print(f"[{symbol}] Orden TP cancelada - Posición cerrada")
+                except Exception as e:
+                    print(f"[{symbol}] Error cancelando orden TP: {e}")
+            else:
+                ordenes_activas.append(symbol)
+        
+        # Actualizar el archivo de órdenes TP
+        tp_orders_actualizadas = {symbol: info for symbol, info in tp_orders.items() 
+                                 if symbol in ordenes_activas}
+        
+        if len(tp_orders) != len(tp_orders_actualizadas):
+            guardar_ordenes_tp(tp_orders_actualizadas)
+            
+    except Exception as e:
+        print(f"Error verificando órdenes TP pendientes: {e}")
+        logging.error(f"Error verificando órdenes TP pendientes: {e}", exc_info=True)
+
+def cerrar_posicion(symbol, positionAmt):
+    """
+    Cierra una posición y cancela cualquier orden TP pendiente
+    """
+    try:
+        # Primero cancelar órdenes TP pendientes
+        tp_orders = cargar_ordenes_tp()
+        
+        if symbol in tp_orders and "order_id" in tp_orders[symbol]:
+            try:
+                client.cancel_order(symbol=symbol, order_id=tp_orders[symbol]["order_id"])
+                print(f"[{symbol}] Orden TP cancelada antes de cerrar posición")
+                del tp_orders[symbol]
+                guardar_ordenes_tp(tp_orders)
+            except Exception as e:
+                print(f"[{symbol}] Error cancelando orden TP: {e}")
+        
+        # Ahora cerrar la posición con una orden de mercado
         side = "sell" if float(positionAmt) > 0 else "buy"
         quantity = abs(float(positionAmt))
         order = retry_api_call(client.create_order, symbol=symbol, side=side, size=quantity)
+        
         if order and "status" in order:
             print(f"Posición cerrada para {symbol}: {order}")
             return order
@@ -574,6 +679,9 @@ def cerrar_posicion(symbol, positionAmt):
         return None
 
 def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
+    """
+    Evalúa si una posición debe cerrarse manualmente (como respaldo si el TP del exchange falla)
+    """
     try:
         entryPrice = float(pos['entryPrice'])
         positionAmt = float(pos['position'])
@@ -581,35 +689,46 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
         symbol = pos['asset']
         direccion = "BUY" if positionAmt > 0 else "SELL"
 
+        # Verificar si hay un TP establecido en el archivo
         niveles = niveles_atr.get(symbol)
         if niveles and "tp_fijo" in niveles:
             tp = niveles["tp_fijo"]
         else:
-            print(f"[{symbol}] No se encontró TP fijo guardado, usando cierre tradicional.")
+            # Si no hay TP guardado, no hay criterio para cerrar manualmente
             return False
 
+        # Verificar si el precio ha alcanzado el TP y cerrar manualmente (respaldo)
         if (direccion == "BUY" and precio_actual >= tp) or (direccion == "SELL" and precio_actual <= tp):
-            print(f"[{symbol}] Cerrando por Take Profit fijo. Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
+            print(f"[{symbol}] Cerrando como respaldo (TP en exchange no ejecutado). Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
             order = cerrar_posicion(symbol, positionAmt)
-            time.sleep(2)
-            pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
-            icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
-            pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
-            enviar_telegram(
-                f"{icono_cerrado} Trade CERRADO: {symbol} {direccion}\n"
-                f"Entry: {entryPrice:.4f}\n"
-                f"Close: {precio_actual:.4f}\n"
-                f"TP: {tp:.4f}\n"
-                f"{pnl_texto}",
-                tipo="close"
-            )
-            resumen_diario["trades_cerrados"] += 1
-            resumen_diario["pnl_total"] += pnl_estimado
-            return True
+            
+            if order:
+                time.sleep(2)
+                pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
+                icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
+                pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
+                enviar_telegram(
+                    f"{icono_cerrado} Trade CERRADO (respaldo): {symbol} {direccion}\n"
+                    f"Entry: {entryPrice:.4f}\n"
+                    f"Close: {precio_actual:.4f}\n"
+                    f"TP: {tp:.4f}\n"
+                    f"{pnl_texto}",
+                    tipo="close"
+                )
+                resumen_diario["trades_cerrados"] += 1
+                resumen_diario["pnl_total"] += pnl_estimado
+                
+                # Eliminar el TP del archivo
+                if symbol in niveles_atr:
+                    del niveles_atr[symbol]
+                    guardar_niveles_atr(niveles_atr)
+                
+                return True
     except Exception as e:
         print(f"Error en evaluar_cierre_operacion_hyperliquid: {e}")
         logging.error(f"Error en evaluar_cierre_operacion_hyperliquid: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error en evaluar_cierre_operacion_hyperliquid: {e}", tipo="error")
+    
     return False
 
 def obtener_precio_hyperliquid(symbol):
@@ -618,12 +737,56 @@ def obtener_precio_hyperliquid(symbol):
         if ticker and 'mid' in ticker:
             return float(ticker['mid'])
         else:
-            print(f"[{symbol}] No se encontró la clave 'mid' en el ticker: {ticker}")
+            debug_print(f"[{symbol}] No se encontró la clave 'mid' en el ticker: {ticker}")
             logging.error(f"No se encontró la clave 'mid' en el ticker de {symbol}: {ticker}")
             return None
     except Exception as e:
         logging.error(f"Error al obtener precio para {symbol}: {e}", exc_info=True)
         return None
+
+def abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
+    """Abre una posición con Take Profit automático en el exchange"""
+    if tiene_saldo_suficiente(MARGIN_PER_TRADE):
+        monto_usdt = LEVERAGE * MARGIN_PER_TRADE
+        cantidad_valida = calcular_cantidad_valida(simbolo, monto_usdt)
+        
+        if cantidad_valida:
+            # Calcular precio de TP según ATR
+            tp = calcular_tp_atr(entry_price, atr, accion)
+            
+            # Ejecutar la orden con TP incluido
+            orden_principal, orden_tp = ejecutar_orden_hyperliquid(simbolo, accion, cantidad_valida, tp)
+            
+            if orden_principal:
+                print(f"[{simbolo}] Trade ejecutado ({accion}) | ATR: {atr:.4f} | TP: {tp:.4f}")
+                
+                # Guardar niveles solo como respaldo
+                niveles_atr = cargar_niveles_atr()
+                niveles_atr[simbolo] = {"tp_fijo": tp}
+                guardar_niveles_atr(niveles_atr)
+                
+                # Enviar notificación
+                icono_abierto = "🔵"
+                tp_msg = f"TP en exchange: {tp:.4f}" if orden_tp else f"TP calculado: {tp:.4f}"
+                enviar_telegram(
+                    f"{icono_abierto} Trade ABIERTO: {simbolo} {accion}\n"
+                    f"Precio: {entry_price:.4f}\n"
+                    f"{tp_msg}\n"
+                    f"ATR: {atr:.4f}\n"
+                    f"Leverage: {LEVERAGE}x | Margen: {MARGIN_PER_TRADE} USDT",
+                    tipo="open"
+                )
+                
+                return True
+            else:
+                print(f"Error al ejecutar orden para {simbolo}")
+                return False
+        else:
+            print(f"No se pudo calcular una cantidad válida para {simbolo}")
+            return False
+    else:
+        print("No hay saldo suficiente para operar.")
+        return False
 
 if __name__ == "__main__":
     try:
@@ -642,7 +805,7 @@ if __name__ == "__main__":
         last_trade_time = None
         ultima_reevaluacion = datetime.now()
 
-        print("Iniciando bot de scalping microestructura v2 con TP fijo, sin trailing, sin Stop Loss ni cierre por timeout (Hyperliquid Testnet)...")
+        print("Iniciando bot de scalping microestructura v2 con TP en exchange (Hyperliquid Testnet)...")
         print(f"Configuración: Apalancamiento={LEVERAGE}x | Margen por operación={MARGIN_PER_TRADE} USDT")
         print(f"TP: {ATR_TP_MULT}xATR (máx {MAX_TP_PCT*100:.1f}% sobre entrada) | SL: NO")
 
@@ -666,14 +829,12 @@ if __name__ == "__main__":
                         with open("ultimo_saldo.txt", "w") as f:
                             f.write(f"{saldo_usdt}")
                     else:
-                        print("❌ No se pudo extraer el saldo. Respuesta de API:", account)
-                        # Registra las claves disponibles para depuración
-                        if account and isinstance(account, dict):
-                            print("Claves disponibles en la respuesta:", account.keys())
-                else:
-                    print("❌ No se pudo obtener la respuesta de la API de cuenta")
+                        print("❌ No se pudo extraer el saldo.")
             except Exception as e:
                 print(f"❌ Error obteniendo saldo: {e}")
+            
+            # Verificar órdenes TP pendientes
+            verificar_ordenes_tp_pendientes()
             
             # Reevaluar los símbolos disponibles periódicamente (pero sin enviar mensajes)
             if verificar_tiempo_para_reevaluar():
@@ -698,7 +859,7 @@ if __name__ == "__main__":
                 pnl = pos.get('unrealizedPnl', 0)
                 print(f"  {symbol} | Cantidad: {positionAmt} | Precio Entrada: {entryPrice} | PnL No Realizado: {pnl}")
 
-            # --- Evaluación de cierre ---
+            # --- Evaluación de cierre (respaldo local por si falla el TP del exchange) ---
             for pos in posiciones:
                 symbol = pos['asset']
                 precio_actual = obtener_precio_hyperliquid(symbol)
@@ -752,31 +913,11 @@ if __name__ == "__main__":
                 accion, razon, atr, entry_price = aplicar_condiciones_microestructura_v2(datos, precio_actual, simbolo)
 
                 if accion and atr is not None:
-                    if tiene_saldo_suficiente(MARGIN_PER_TRADE):
-                        monto_usdt = LEVERAGE * MARGIN_PER_TRADE
-                        cantidad_valida = calcular_cantidad_valida(simbolo, monto_usdt)
-                        if cantidad_valida:
-                            orden = ejecutar_orden_hyperliquid(simbolo, accion, cantidad_valida)
-                            if orden:
-                                tp = calcular_tp_atr(entry_price, atr, accion)
-                                niveles_atr[simbolo] = {"tp_fijo": tp}
-                                guardar_niveles_atr(niveles_atr)
-                                print(f"[{simbolo}] Trade ejecutado ({accion}) | ATR: {atr:.4f} | TP FIJO: {tp:.4f} | Configuración TP: {ATR_TP_MULT}xATR (máx {MAX_TP_PCT*100:.1f}% sobre entrada)")
-                                icono_abierto = "🔵"
-                                enviar_telegram(
-                                    f"{icono_abierto} Trade ABIERTO: {simbolo} {accion}\n"
-                                    f"Precio: {entry_price:.4f}\n"
-                                    f"TP FIJO: {tp:.4f}\n"
-                                    f"ATR: {atr:.4f}\n"
-                                    f"Leverage: {LEVERAGE}x | Margen: {MARGIN_PER_TRADE} USDT",
-                                    tipo="open"
-                                )
-                                resumen_diario["trades_abiertos"] += 1
-                                apertura_realizada = True
-                                last_trade_time = datetime.now()
-                                break
-                    else:
-                        print("No hay saldo suficiente para operar.")
+                    if abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
+                        resumen_diario["trades_abiertos"] += 1
+                        apertura_realizada = True
+                        last_trade_time = datetime.now()
+                        break
                 else:
                     print(f"[{simbolo}] No se abre trade. Razón: {razon}")
 
