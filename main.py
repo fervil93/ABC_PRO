@@ -113,7 +113,6 @@ def obtener_datos_historicos(symbol, interval='1m', limit=100):
             enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}.", tipo="error")
             logging.error(f"Error al obtener datos históricos para {symbol}")
             return None
-        # El SDK devuelve lista de listas
         if isinstance(df, list):
             df = pd.DataFrame(df)
             df.columns = ['timestamp','open','high','low','close','volume']
@@ -258,10 +257,10 @@ def tiene_saldo_suficiente(margen):
 
 def ejecutar_orden_hyperliquid(symbol, side, quantity):
     try:
-        # Este método ahora simula la orden (el SDK requiere firma para operar real)
+        # Ahora realmente manda la orden al exchange testnet firmada
         order = retry_api_call(client.create_order, symbol=symbol, side=side.lower(), size=quantity)
-        if order and order.get("status") == "simulated":
-            print(f"Orden simulada: {order}")
+        if order and "resting" in order:
+            print(f"Orden ejecutada: {order}")
             return order
         else:
             enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
@@ -277,8 +276,8 @@ def cerrar_posicion(symbol, positionAmt):
         side = "sell" if float(positionAmt) > 0 else "buy"
         quantity = abs(float(positionAmt))
         order = retry_api_call(client.create_order, symbol=symbol, side=side, size=quantity)
-        if order and order.get("status") == "simulated":
-            print(f"Posición simulada cerrada para {symbol}: {order}")
+        if order and "resting" in order:
+            print(f"Posición cerrada para {symbol}: {order}")
             return order
         else:
             enviar_telegram(f"⚠️ Error al cerrar posición para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
