@@ -419,15 +419,47 @@ def aplicar_condiciones_microestructura_v2(df, precio_actual, symbol):
     return None, razon, None, None
 
 def calcular_tp_atr(entry_price, atr, direction, fee_rate=0.001):
+    """
+    Calcula el precio de Take Profit basado en ATR con validación de dirección mejorada.
+    """
     max_tp_move = entry_price * MAX_TP_PCT
-    if direction == "BUY":
-        tp = entry_price + ATR_TP_MULT * atr
-        tp = min(tp, entry_price + max_tp_move)
-        tp = max(tp, entry_price + max(entry_price * fee_rate * 3, 0.5))
+    
+    # Normalizar la dirección para asegurar que solo sea "BUY" o "SELL"
+    direction_normalizada = direction.upper().strip()
+    if "BUY" in direction_normalizada:
+        direction_normalizada = "BUY"
+    elif "SELL" in direction_normalizada:
+        direction_normalizada = "SELL"
     else:
+        # Si no podemos determinar la dirección, usar un valor seguro
+        print(f"ERROR: Dirección no reconocida '{direction}'. Se usará 'SELL' por defecto.")
+        direction_normalizada = "SELL"
+    
+    if direction_normalizada == "BUY":
+        # Para operaciones LONG
+        tp = entry_price + ATR_TP_MULT * atr
+        # No permitir que exceda el porcentaje máximo
+        tp = min(tp, entry_price * (1 + MAX_TP_PCT))
+        # Asegurar ganancia mínima para cubrir comisiones
+        tp = max(tp, entry_price * (1 + fee_rate * 3))
+    else:
+        # Para operaciones SHORT
         tp = entry_price - ATR_TP_MULT * atr
-        tp = max(tp, entry_price - max_tp_move)
-        tp = min(tp, entry_price - max(entry_price * fee_rate * 3, 0.5))
+        # No permitir que exceda el porcentaje máximo (en SHORT es precio menor)
+        tp = max(tp, entry_price * (1 - MAX_TP_PCT))
+        # Asegurar ganancia mínima para cubrir comisiones (pero sin subir sobre el precio de entrada)
+        tp = min(tp, entry_price * (1 - fee_rate * 3))
+    
+    # Validación final para detectar valores desorbitados
+    pct_change = abs(tp - entry_price) / entry_price
+    if pct_change > MAX_TP_PCT:
+        print(f"ADVERTENCIA: TP calculado ({tp:.4f}) excede el límite máximo permitido ({MAX_TP_PCT*100}%)")
+        # Corregir el TP para que respete el límite máximo
+        if direction_normalizada == "BUY":
+            tp = entry_price * (1 + MAX_TP_PCT)
+        else:
+            tp = entry_price * (1 - MAX_TP_PCT)
+    
     return tp
 
 def calcular_cantidad_valida(symbol, monto_usdt):
@@ -767,7 +799,7 @@ def abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
                 
                 # Enviar notificación
                 icono_abierto = "🔵"
-                tp_msg = f"TP en exchange: {tp:.4f}" if orden_tp else f"TP calculado: {tp:.4f}"
+                tp_msg = f"TP FIJO: {tp:.4f}" if orden_tp else f"TP calculado: {tp:.4f}"
                 enviar_telegram(
                     f"{icono_abierto} Trade ABIERTO: {simbolo} {accion}\n"
                     f"Precio: {entry_price:.4f}\n"
