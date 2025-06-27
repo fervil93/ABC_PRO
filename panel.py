@@ -260,16 +260,27 @@ def get_account_balance():
             # Intentar leer desde archivo (alternativa)
             return get_balance_from_file()
             
-        # Verificar claves en la respuesta
-        available_keys = list(account.keys()) if isinstance(account, dict) else "No es un diccionario"
+        # Intentar extraer el saldo de diferentes ubicaciones en la respuesta
+        balance = None
         
-        if "equity" not in account:
-            st.warning(f"⚠️ La clave 'equity' no se encontró en la respuesta. Claves disponibles: {available_keys}")
+        # Opción 1: Clave "equity" directa (implementación original)
+        if "equity" in account:
+            balance = float(account["equity"])
+        # Opción 2: Dentro de marginSummary.accountValue (según la respuesta de API)
+        elif "marginSummary" in account and "accountValue" in account["marginSummary"]:
+            balance = float(account["marginSummary"]["accountValue"])
+        
+        # Si no se pudo obtener el saldo de ninguna manera, intentar desde archivo
+        if balance is None:
+            available_keys = list(account.keys()) if isinstance(account, dict) else "No es un diccionario"
+            st.warning(f"⚠️ No se encontró el saldo en la respuesta. Claves disponibles: {available_keys}")
+            # Mostrar más detalles si existe marginSummary
+            if "marginSummary" in account:
+                st.info(f"Contenido de marginSummary: {account['marginSummary']}")
             # Intentar leer desde archivo (alternativa)
             return get_balance_from_file()
         
         # Si todo está bien, procesar el saldo
-        balance = float(account["equity"])
         cache["last_balance_check"] = datetime.now()
         cache["balance"] = balance
         cache["api_errors"] = 0  # Reset error counter on success
