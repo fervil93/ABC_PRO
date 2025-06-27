@@ -96,7 +96,7 @@ def ajustar_precision(valor, precision):
 def obtener_posiciones_hyperliquid():
     try:
         account = retry_api_call(client.get_account)
-        # Estructura según SDK oficial: "assetPositions"
+        # La estructura de user_state contiene 'assetPositions'
         if not account or "assetPositions" not in account:
             return []
         posiciones_abiertas = [p for p in account["assetPositions"] if float(p.get('position', 0)) != 0]
@@ -257,9 +257,8 @@ def tiene_saldo_suficiente(margen):
 
 def ejecutar_orden_hyperliquid(symbol, side, quantity):
     try:
-        # Ahora realmente manda la orden al exchange testnet firmada
         order = retry_api_call(client.create_order, symbol=symbol, side=side.lower(), size=quantity)
-        if order and "resting" in order:
+        if order and "status" in order:
             print(f"Orden ejecutada: {order}")
             return order
         else:
@@ -276,7 +275,7 @@ def cerrar_posicion(symbol, positionAmt):
         side = "sell" if float(positionAmt) > 0 else "buy"
         quantity = abs(float(positionAmt))
         order = retry_api_call(client.create_order, symbol=symbol, side=side, size=quantity)
-        if order and "resting" in order:
+        if order and "status" in order:
             print(f"Posición cerrada para {symbol}: {order}")
             return order
         else:
@@ -293,7 +292,7 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
         entryPrice = float(pos['entryPrice'])
         positionAmt = float(pos['position'])
         qty = abs(positionAmt)
-        symbol = pos['asset'].replace("USDT", "")
+        symbol = pos['asset']
         direccion = "BUY" if positionAmt > 0 else "SELL"
 
         niveles = niveles_atr.get(symbol)
@@ -330,12 +329,12 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
 def obtener_precio_hyperliquid(symbol):
     try:
         ticker = retry_api_call(client.get_price, symbol=symbol)
-        if ticker and 'price' in ticker:
-            return float(ticker['price'])
+        if ticker and 'mid' in ticker:
+            return float(ticker['mid'])
         else:
-            print(f"[{symbol}] No se encontró la clave 'price' en el ticker: {ticker}")
-            enviar_telegram(f"⚠️ No se encontró la clave 'price' en el ticker de {symbol}.", tipo="error")
-            logging.error(f"No se encontró la clave 'price' en el ticker de {symbol}: {ticker}")
+            print(f"[{symbol}] No se encontró la clave 'mid' en el ticker: {ticker}")
+            enviar_telegram(f"⚠️ No se encontró la clave 'mid' en el ticker de {symbol}.", tipo="error")
+            logging.error(f"No se encontró la clave 'mid' en el ticker de {symbol}: {ticker}")
             return None
     except Exception as e:
         logging.error(f"Error al obtener precio para {symbol}: {e}", exc_info=True)
@@ -363,7 +362,7 @@ if __name__ == "__main__":
 
             print(f"Posiciones abiertas en Hyperliquid ({len(posiciones)}):")
             for pos in posiciones:
-                symbol = pos['asset'].replace("USDT", "")
+                symbol = pos['asset']
                 positionAmt = pos['position']
                 entryPrice = pos['entryPrice']
                 pnl = pos.get('unrealizedPnl', 0)
@@ -371,7 +370,7 @@ if __name__ == "__main__":
 
             # --- Evaluación de cierre ---
             for pos in posiciones:
-                symbol = pos['asset'].replace("USDT", "")
+                symbol = pos['asset']
                 precio_actual = obtener_precio_hyperliquid(symbol)
                 if precio_actual is None:
                     continue
@@ -391,7 +390,7 @@ if __name__ == "__main__":
             # --- Solo se permite una apertura nueva por ciclo ---
             apertura_realizada = False
             for simbolo in simbolos:
-                ya_abierta = any(pos['asset'].replace("USDT", "") == simbolo for pos in posiciones)
+                ya_abierta = any(pos['asset'] == simbolo for pos in posiciones)
                 if ya_abierta or apertura_realizada:
                     continue
 
