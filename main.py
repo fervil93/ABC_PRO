@@ -14,7 +14,6 @@ from secret import WALLET_ADDRESS
 from notificaciones import enviar_telegram
 from hyperliquid_client import HyperliquidClient
 
-# --- CONFIGURACIÓN LOGGING ---
 logging.basicConfig(
     filename='bot_errors.log',
     level=logging.ERROR,
@@ -97,9 +96,10 @@ def ajustar_precision(valor, precision):
 def obtener_posiciones_hyperliquid():
     try:
         account = retry_api_call(client.get_account)
-        if not account or "positions" not in account:
+        # Estructura según SDK oficial: "assetPositions"
+        if not account or "assetPositions" not in account:
             return []
-        posiciones_abiertas = [p for p in account["positions"] if float(p.get('size', 0)) != 0]
+        posiciones_abiertas = [p for p in account["assetPositions"] if float(p.get('position', 0)) != 0]
         return posiciones_abiertas
     except Exception as e:
         logging.error(f"Error al obtener posiciones Hyperliquid: {e}", exc_info=True)
@@ -113,7 +113,7 @@ def obtener_datos_historicos(symbol, interval='1m', limit=100):
             enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}.", tipo="error")
             logging.error(f"Error al obtener datos históricos para {symbol}")
             return None
-        # Adaptar, SDK puede devolver lista o DataFrame
+        # El SDK devuelve lista de listas
         if isinstance(df, list):
             df = pd.DataFrame(df)
             df.columns = ['timestamp','open','high','low','close','volume']
@@ -258,9 +258,10 @@ def tiene_saldo_suficiente(margen):
 
 def ejecutar_orden_hyperliquid(symbol, side, quantity):
     try:
+        # Este método ahora simula la orden (el SDK requiere firma para operar real)
         order = retry_api_call(client.create_order, symbol=symbol, side=side.lower(), size=quantity)
-        if order and order.get("status") == "success":
-            print(f"Orden ejecutada: {order}")
+        if order and order.get("status") == "simulated":
+            print(f"Orden simulada: {order}")
             return order
         else:
             enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
@@ -276,8 +277,8 @@ def cerrar_posicion(symbol, positionAmt):
         side = "sell" if float(positionAmt) > 0 else "buy"
         quantity = abs(float(positionAmt))
         order = retry_api_call(client.create_order, symbol=symbol, side=side, size=quantity)
-        if order and order.get("status") == "success":
-            print(f"Posición cerrada para {symbol}: {order}")
+        if order and order.get("status") == "simulated":
+            print(f"Posición simulada cerrada para {symbol}: {order}")
             return order
         else:
             enviar_telegram(f"⚠️ Error al cerrar posición para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
@@ -291,9 +292,9 @@ def cerrar_posicion(symbol, positionAmt):
 def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     try:
         entryPrice = float(pos['entryPrice'])
-        positionAmt = float(pos['size'])
+        positionAmt = float(pos['position'])
         qty = abs(positionAmt)
-        symbol = pos['symbol'].replace("USDT", "")
+        symbol = pos['asset'].replace("USDT", "")
         direccion = "BUY" if positionAmt > 0 else "SELL"
 
         niveles = niveles_atr.get(symbol)
@@ -363,15 +364,15 @@ if __name__ == "__main__":
 
             print(f"Posiciones abiertas en Hyperliquid ({len(posiciones)}):")
             for pos in posiciones:
-                symbol = pos['symbol'].replace("USDT", "")
-                positionAmt = pos['size']
+                symbol = pos['asset'].replace("USDT", "")
+                positionAmt = pos['position']
                 entryPrice = pos['entryPrice']
                 pnl = pos.get('unrealizedPnl', 0)
                 print(f"  {symbol} | Cantidad: {positionAmt} | Precio Entrada: {entryPrice} | PnL No Realizado: {pnl}")
 
             # --- Evaluación de cierre ---
             for pos in posiciones:
-                symbol = pos['symbol'].replace("USDT", "")
+                symbol = pos['asset'].replace("USDT", "")
                 precio_actual = obtener_precio_hyperliquid(symbol)
                 if precio_actual is None:
                     continue
@@ -391,7 +392,7 @@ if __name__ == "__main__":
             # --- Solo se permite una apertura nueva por ciclo ---
             apertura_realizada = False
             for simbolo in simbolos:
-                ya_abierta = any(pos['symbol'].replace("USDT", "") == simbolo for pos in posiciones)
+                ya_abierta = any(pos['asset'].replace("USDT", "") == simbolo for pos in posiciones)
                 if ya_abierta or apertura_realizada:
                     continue
 
