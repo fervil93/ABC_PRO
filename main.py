@@ -202,102 +202,116 @@ def obtener_posiciones_hyperliquid():
                 print(f"Claves principales: {list(account.keys())}")
                 if "assetPositions" in account:
                     print(f"Número de posiciones: {len(account['assetPositions'])}")
-                    # Imprimir la primera posición para ver su estructura
+                    # Imprimir la primera posición completa para depuración
                     if len(account['assetPositions']) > 0:
-                        print(f"Estructura de primera posición: {account['assetPositions'][0].keys()}")
+                        print(f"Primera posición completa: {account['assetPositions'][0]}")
         
-        # La estructura de user_state contiene 'assetPositions'
+        # La estructura de account contiene 'assetPositions'
         if not account or "assetPositions" not in account:
             print("No se encontró 'assetPositions' en la respuesta de la API")
             return []
         
         posiciones_abiertas = []
-        for i, p in enumerate(account["assetPositions"]):
+        for i, posicion_item in enumerate(account["assetPositions"]):
             try:
                 print(f"Procesando posición {i+1}...")
                 
-                # Extraer el símbolo/asset primero para los mensajes de log
-                symbol = ""
-                if 'coin' in p:
-                    symbol = p['coin']
-                elif 'asset' in p:
-                    symbol = p['asset']
+                # Si 'position' está en las claves y es un diccionario, extraer de ahí
+                if 'position' in posicion_item and isinstance(posicion_item['position'], dict):
+                    p = posicion_item['position']
+                    print(f"Extrayendo de posicion_item['position']: {p}")
                 else:
-                    print(f"[ADVERTENCIA] No se pudo encontrar símbolo para la posición {i+1}: {p.keys()}")
+                    p = posicion_item
+                    print(f"Usando posicion_item directamente: {p}")
+                
+                # Extraer el símbolo/asset
+                symbol = ""
+                for key in ['coin', 'asset', 'symbol']:
+                    if key in p:
+                        symbol = p[key]
+                        print(f"Símbolo encontrado en '{key}': {symbol}")
+                        break
+                
+                if not symbol:
+                    print(f"[ADVERTENCIA] No se pudo encontrar símbolo para la posición {i+1}")
+                    # Intentar extraer más información para depuración
+                    if isinstance(p, dict):
+                        print(f"Claves disponibles: {list(p.keys())}")
                     continue
                 
-                print(f"Símbolo encontrado: {symbol}")
-                
-                # Intentar extraer szi (tamaño de la posición)
+                # Intentar extraer el tamaño de la posición
                 position_float = None
-                if 'szi' in p:
+                for pos_key in ['szi', 'size', 'position', 'amount', 'qty']:
+                    if pos_key in p:
+                        if isinstance(p[pos_key], dict):
+                            for val_key in ['value', 'amount', 'size']:
+                                if val_key in p[pos_key]:
+                                    try:
+                                        position_float = float(p[pos_key][val_key])
+                                        print(f"[{symbol}] Valor de posición extraído de {pos_key}.{val_key}: {position_float}")
+                                        break
+                                    except (ValueError, TypeError) as e:
+                                        print(f"[{symbol}] Error convirtiendo {pos_key}.{val_key}: {e}")
+                        else:
+                            try:
+                                position_float = float(p[pos_key])
+                                print(f"[{symbol}] Valor de posición extraído de {pos_key}: {position_float}")
+                                break
+                            except (ValueError, TypeError) as e:
+                                print(f"[{symbol}] Error convirtiendo {pos_key}: {e}")
+                
+                # Si no encontramos valor de posición, intentarlo desde el item principal
+                if position_float is None and 'position' in posicion_item and not isinstance(posicion_item['position'], dict):
                     try:
-                        position_float = float(p['szi'])
-                        print(f"[{symbol}] szi encontrado: {position_float}")
+                        position_float = float(posicion_item['position'])
+                        print(f"[{symbol}] Valor de posición extraído del item principal: {position_float}")
                     except (ValueError, TypeError) as e:
-                        print(f"[ADVERTENCIA] No se pudo convertir szi a float para {symbol}: {p.get('szi')} - {e}")
+                        print(f"[{symbol}] Error convirtiendo posición del item principal: {e}")
                 
-                # Si no tenemos szi, buscar en 'position' o 'size'
-                if position_float is None:
-                    for key in ['position', 'size']:
-                        if key in p:
-                            if isinstance(p[key], dict):
-                                print(f"[{symbol}] '{key}' es un diccionario: {p[key]}")
-                                # Intentar obtener el valor de diferentes claves posibles
-                                for val_key in ['value', 'amount', 'size']:
-                                    if val_key in p[key]:
-                                        try:
-                                            position_float = float(p[key][val_key])
-                                            print(f"[{symbol}] Extraído valor de {key}.{val_key}: {position_float}")
-                                            break
-                                        except (ValueError, TypeError) as e:
-                                            print(f"[ADVERTENCIA] Error convirtiendo {key}.{val_key} para {symbol}: {e}")
-                            else:
-                                try:
-                                    position_float = float(p[key])
-                                    print(f"[{symbol}] Extraído valor de {key}: {position_float}")
-                                    break
-                                except (ValueError, TypeError) as e:
-                                    print(f"[ADVERTENCIA] Error convirtiendo {key} para {symbol}: {e}")
+                # Si aún no tenemos valor, intentar buscar en el tipo
+                if position_float is None and 'type' in posicion_item:
+                    print(f"[{symbol}] Intentando extraer información del tipo: {posicion_item['type']}")
+                    if posicion_item['type'] == 'isolated':
+                        # Para posiciones aisladas, el símbolo podría estar en el tipo
+                        for key in ['coin', 'asset', 'symbol']:
+                            if key in posicion_item:
+                                symbol = posicion_item[key]
+                                print(f"[Actualizado] Símbolo encontrado en posicion_item['{key}']: {symbol}")
+                                break
                 
-                # Si aún no tenemos un valor de posición, continuar al siguiente
+                # Si todavía no tenemos posición, descartar este item
                 if position_float is None:
-                    print(f"[{symbol}] No se pudo extraer tamaño de posición. Omitiendo.")
+                    print(f"[{symbol}] No se pudo extraer un valor numérico para la posición")
                     continue
                 
                 # Solo procesar posiciones no-cero
                 if abs(position_float) < 0.0001:
-                    print(f"[{symbol}] Posición cero o muy pequeña: {position_float}. Omitiendo.")
+                    print(f"[{symbol}] Posición demasiado pequeña: {position_float}, omitiendo")
                     continue
                 
-                # Obtener el precio de entrada
-                entry_price_float = None
-                for entry_key in ['entryPx', 'entryPrice', 'avgPrice']:
+                # Obtener precio de entrada
+                entry_price_float = 0
+                for entry_key in ['entryPx', 'entryPrice', 'avgPrice', 'price']:
                     if entry_key in p:
                         if isinstance(p[entry_key], dict):
-                            # Similar al manejo de 'position'
-                            for val_key in ['value', 'price']:
+                            for val_key in ['value', 'price', 'amount']:
                                 if val_key in p[entry_key]:
                                     try:
                                         entry_price_float = float(p[entry_key][val_key])
-                                        print(f"[{symbol}] Extraído precio de entrada de {entry_key}.{val_key}: {entry_price_float}")
+                                        print(f"[{symbol}] Precio de entrada extraído de {entry_key}.{val_key}: {entry_price_float}")
                                         break
-                                    except (ValueError, TypeError):
-                                        pass
+                                    except (ValueError, TypeError) as e:
+                                        print(f"[{symbol}] Error convirtiendo {entry_key}.{val_key}: {e}")
                         else:
                             try:
                                 entry_price_float = float(p[entry_key])
-                                print(f"[{symbol}] Extraído precio de entrada de {entry_key}: {entry_price_float}")
+                                print(f"[{symbol}] Precio de entrada extraído de {entry_key}: {entry_price_float}")
                                 break
-                            except (ValueError, TypeError):
-                                pass
+                            except (ValueError, TypeError) as e:
+                                print(f"[{symbol}] Error convirtiendo {entry_key}: {e}")
                 
-                if entry_price_float is None:
-                    print(f"[{symbol}] No se pudo extraer precio de entrada, usando 0")
-                    entry_price_float = 0
-                
-                # Obtener PnL no realizado
-                unrealized_pnl_float = None
+                # Obtener PnL
+                unrealized_pnl_float = 0
                 for pnl_key in ['unrealizedPnl', 'pnl', 'unrealizedProfit']:
                     if pnl_key in p:
                         if isinstance(p[pnl_key], dict):
@@ -305,23 +319,19 @@ def obtener_posiciones_hyperliquid():
                                 if val_key in p[pnl_key]:
                                     try:
                                         unrealized_pnl_float = float(p[pnl_key][val_key])
-                                        print(f"[{symbol}] Extraído PnL de {pnl_key}.{val_key}: {unrealized_pnl_float}")
+                                        print(f"[{symbol}] PnL extraído de {pnl_key}.{val_key}: {unrealized_pnl_float}")
                                         break
-                                    except (ValueError, TypeError):
-                                        pass
+                                    except (ValueError, TypeError) as e:
+                                        print(f"[{symbol}] Error convirtiendo {pnl_key}.{val_key}: {e}")
                         else:
                             try:
                                 unrealized_pnl_float = float(p[pnl_key])
-                                print(f"[{symbol}] Extraído PnL de {pnl_key}: {unrealized_pnl_float}")
+                                print(f"[{symbol}] PnL extraído de {pnl_key}: {unrealized_pnl_float}")
                                 break
-                            except (ValueError, TypeError):
-                                pass
+                            except (ValueError, TypeError) as e:
+                                print(f"[{symbol}] Error convirtiendo {pnl_key}: {e}")
                 
-                if unrealized_pnl_float is None:
-                    print(f"[{symbol}] No se pudo extraer PnL, usando 0")
-                    unrealized_pnl_float = 0
-                
-                # Crear una posición formateada con todos los valores convertidos adecuadamente
+                # Añadir posición formateada
                 posicion_formateada = {
                     'asset': symbol,
                     'position': position_float,
@@ -332,9 +342,9 @@ def obtener_posiciones_hyperliquid():
                 print(f"[{symbol}] Posición añadida: cantidad={position_float}, precio_entrada={entry_price_float}, pnl={unrealized_pnl_float}")
                 
             except Exception as e:
-                print(f"Error procesando posición {i if 'i' in locals() else 'desconocida'}: {e}")
+                print(f"Error procesando posición {i+1}: {e}")
                 logging.error(f"Error procesando posición: {e}", exc_info=True)
-                continue  # Saltar esta posición problemática
+                continue
         
         print(f"Total de posiciones procesadas: {len(posiciones_abiertas)}")
         return posiciones_abiertas
