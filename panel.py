@@ -9,6 +9,13 @@ import os
 import time
 from hyperliquid_client import HyperliquidClient
 
+# Esta debe ser la primera llamada a Streamlit
+st.set_page_config(
+    page_title="Monitor Trading - Hyperliquid",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # Configuración de estilo personalizado
 st.markdown("""
     <style>
@@ -90,12 +97,6 @@ def get_client():
     return HyperliquidClient()
 
 client = get_client()
-
-st.set_page_config(
-    page_title="Monitor Trading - Hyperliquid",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 
 # Función con retry y backoff para llamadas API
 def api_call_with_retry(func, *args, max_retries=3, **kwargs):
@@ -195,7 +196,6 @@ def get_open_positions():
             pct_change = (entry - precio_actual) / entry * 100
         
         tp_fijo = None
-        sl_atr = "NO"
         if symbol in niveles_atr:
             tp_fijo = niveles_atr[symbol].get("tp_fijo")
         
