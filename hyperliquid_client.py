@@ -3,16 +3,16 @@ from hyperliquid.exchange import Exchange
 from hyperliquid.info import Info
 from eth_account import Account
 from secret import WALLET_PRIVATE_KEY, WALLET_ADDRESS
-from hyperliquid.utils.constants import MAINNET_API_URL
+import config
 
 class HyperliquidClient:
     def __init__(self):
         # Crear wallet desde la clave privada
         self.wallet = Account.from_key(WALLET_PRIVATE_KEY)
         
-        # Instancias para operar y consultar
-        self.info = Info(MAINNET_API_URL)  # Para consultas
-        self.exchange = Exchange(self.wallet, MAINNET_API_URL)  # Para trading
+        # Instancias para operar y consultar utilizando la API_URL de config.py
+        self.info = Info(config.API_URL)  # Para consultas
+        self.exchange = Exchange(self.wallet, config.API_URL)  # Para trading
         
     def get_account(self):
         # Devuelve el estado de la cuenta
@@ -54,3 +54,15 @@ class HyperliquidClient:
         
         # Usando market_open para órdenes de mercado
         return self.exchange.market_open(symbol, is_buy, size)
+    
+    def set_leverage(self, symbol, leverage=None):
+        # Configurar apalancamiento según config.LEVERAGE si no se especifica
+        if leverage is None:
+            leverage = config.LEVERAGE
+        
+        # Actualizar leverage usando el método correcto de la API
+        try:
+            return self.exchange.update_leverage(leverage, symbol)
+        except Exception as e:
+            print(f"Error al establecer apalancamiento: {e}")
+            return None
