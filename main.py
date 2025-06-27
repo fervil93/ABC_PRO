@@ -80,7 +80,7 @@ TP_ORDERS_FILE = "tp_orders.json"
 COOLDOWN_MINUTES = 5  # Reducido de 15 a 5 minutos
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
-RETRY_SLEEP = 2
+RETRY_SLEEP = 5  # Aumentar de 2 a 5 segundos entre reintentos
 VOLATILITY_WINDOW = 10
 VOLATILITY_UMBRAL = 0.015
 REEVALUACION_SIMBOLOS_HORAS = 6  # Frecuencia para reevaluar símbolos
@@ -875,7 +875,7 @@ if __name__ == "__main__":
         # Ahora enviamos un solo mensaje de inicio con toda la información
         enviar_telegram(f"🚀 Bot arrancado correctamente y en ejecución.\n\n🔍 Símbolos disponibles para operar ({len(simbolos)}/{20}): {', '.join(simbolos)}", tipo="info")
             
-        intervalo_segundos = 5
+        intervalo_segundos = 10  # Aumentar de 5 a 10 segundos el ciclo principal
         tiempo_inicio = datetime.now()
         last_trade_time = None
         ultima_reevaluacion = datetime.now()
