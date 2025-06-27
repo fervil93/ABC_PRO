@@ -1,15 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.ticker import MaxNLocator
 import config
 from config import TIMEOUT_MINUTES, LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
 from streamlit_autorefresh import st_autorefresh
 import json
 import os
-import time
 from hyperliquid_client import HyperliquidClient
 
 def leer_tiempo_inicio_bot():
@@ -25,6 +21,19 @@ def leer_niveles_atr():
             return json.load(f)
     else:
         return {}
+
+# Función para leer símbolos disponibles desde archivo
+def leer_simbolos_disponibles_desde_archivo():
+    try:
+        # Si el bot guarda los símbolos disponibles en un archivo, podemos leerlos directamente
+        if os.path.exists("simbolos_disponibles.txt"):
+            with open("simbolos_disponibles.txt", "r") as f:
+                contenido = f.read().strip()
+                simbolos = [s.strip() for s in contenido.split(',')]
+                return simbolos
+    except Exception:
+        pass
+    return None
 
 client = HyperliquidClient()
 
@@ -94,8 +103,7 @@ def get_open_positions():
             direction = "long" if qty > 0 else "short"
             pnl = float(p.get('unrealizedPnl', 0))
             
-            # Hyperliquid no proporciona timestamp de actualización como Binance,
-            # usaremos la hora actual o un timestamp de registro si está disponible
+            # Usamos la hora actual como timestamp
             ts = datetime.now()
             
             # Obtener precio actual
@@ -113,7 +121,7 @@ def get_open_positions():
             if symbol in niveles_atr:
                 tp_fijo = niveles_atr[symbol].get("tp_fijo")
             
-            # Hyperliquid proporciona la liquidación en el objeto de posición
+            # Liquidation price
             liquidation_price = p.get('liquidationPrice', 0)
             try:
                 liquidation_price = float(liquidation_price)
@@ -152,24 +160,35 @@ def get_open_positions():
         return pd.DataFrame()
 
 def obtener_simbolos_disponibles():
-    """Obtiene la lista de símbolos disponibles en Hyperliquid"""
+    """Obtiene la lista de símbolos disponibles usando el mismo método que el bot principal"""
+    # Primero intentamos leer desde el archivo, si existe
+    simbolos_desde_archivo = leer_simbolos_disponibles_desde_archivo()
+    if simbolos_desde_archivo:
+        return simbolos_desde_archivo
+        
+    # Si no hay archivo, replicamos la lógica del bot principal
     try:
-        # Lista predefinida de símbolos que sabemos que están en Hyperliquid
-        simbolos_conocidos = [
-            'BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'ARB', 'SUI', 'OP', 
-            'AVAX', 'NEAR', 'ADA', 'ATOM'
+        todos_simbolos = [
+            'BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'ARB', 'MATIC', 'SUI', 'PEPE', 'OP', 
+            'XRP', 'AVAX', 'LINK', 'NEAR', 'DOT', 'ADA', 'ATOM', 'LTC', 'SHIB', 'UNI'
         ]
         
-        # Intentar verificar disponibilidad de cada símbolo con get_price
         simbolos_disponibles = []
-        for symbol in simbolos_conocidos:
+        for symbol in todos_simbolos:
             try:
                 precio = client.get_price(symbol)
                 if precio and precio.get('mid'):
-                    simbolos_disponibles.append(symbol)
+                    # También verificamos que podamos obtener datos históricos
+                    df = client.get_ohlcv(symbol, '1m', 5)
+                    if df is not None:
+                        simbolos_disponibles.append(symbol)
             except Exception:
                 pass
                 
+        # Guardar los símbolos encontrados para futuros usos
+        with open("simbolos_disponibles_panel.txt", "w") as f:
+            f.write(",".join(simbolos_disponibles))
+            
         return simbolos_disponibles
     except Exception as e:
         st.error(f"Error obteniendo símbolos disponibles: {e}")
@@ -184,11 +203,6 @@ def get_account_balance():
     except Exception as e:
         st.error(f"Error obteniendo saldo: {e}")
         return 0
-
-# Simulación de historial de trades para el panel
-def simular_historial_trades():
-    st.warning("El historial de trades es simulado. La API de Hyperliquid no proporciona acceso directo al historial de trades completo.")
-    return pd.DataFrame()
 
 balance_inicial = get_account_balance()
 
@@ -216,7 +230,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ----------- MEJORA 1: mostrar arriba la configuración de trading -----------
+# ----------- CONFIGURACIÓN DE TRADING -----------
 tp_text = f"{ATR_TP_MULT} x ATR (máx {MAX_TP_PCT*100:.1f}% sobre entrada)"
 sl_text = "NO"
 st.markdown(
@@ -233,9 +247,6 @@ st.markdown(
 # --- SECCIÓN DE BALANCE ACTUAL ---
 current_balance = get_account_balance()
 st.markdown(f"<h3 style='text-align: center;'>Saldo actual: {current_balance:.4f} USDT</h3>", unsafe_allow_html=True)
-
-# --- SIMULACIÓN DE HISTORIAL DE TRADES ---
-st.info("En Hyperliquid, el historial de trades no está disponible directamente a través de la API pública de la forma en que lo está en Binance. Para tener esta funcionalidad, sería necesario registrar los trades en un archivo local cuando ocurren.")
 
 # -------- OPERACIONES ABIERTAS: tabla + botón centrado y compacto --------
 st.markdown("<h4 style='text-align: center;'>Operaciones abiertas</h4>", unsafe_allow_html=True)
@@ -278,11 +289,37 @@ else:
 # Sección para los símbolos disponibles
 st.markdown("<h4 style='text-align: center;'>Símbolos disponibles para operar</h4>", unsafe_allow_html=True)
 
-simbolos = obtener_simbolos_disponibles()
+# Añadimos un botón para actualizar manualmente los símbolos
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    actualizar_simbolos = st.button("🔄 Actualizar símbolos")
+
+if actualizar_simbolos:
+    # Si se pulsa el botón, forzamos una actualización de la lista
+    with st.spinner("Actualizando símbolos disponibles..."):
+        simbolos = obtener_simbolos_disponibles()
+        st.success(f"Se encontraron {len(simbolos)} símbolos disponibles.")
+else:
+    simbolos = obtener_simbolos_disponibles()
+
+# Verificar si hay una última actualización guardada
+ultima_actualizacion = None
+try:
+    if os.path.exists("ultima_verificacion_simbolos.txt"):
+        with open("ultima_verificacion_simbolos.txt", "r") as f:
+            ultima_actualizacion = datetime.fromisoformat(f.read().strip())
+except:
+    pass
+
+if ultima_actualizacion:
+    st.markdown(f"<p style='text-align: center;'>Última verificación de símbolos: {ultima_actualizacion.strftime('%Y-%m-%d %H:%M:%S')}</p>", unsafe_allow_html=True)
+
 if simbolos:
-    # Crear una tabla con los símbolos disponibles
+    # Crear una tabla con los símbolos disponibles y el total
+    st.markdown(f"<p style='text-align: center; font-weight: bold;'>Total de símbolos: {len(simbolos)}/{20}</p>", unsafe_allow_html=True)
+    
     cols = st.columns(4)
     for i, symbol in enumerate(simbolos):
         cols[i % 4].write(f"✅ {symbol}")
 else:
-    st.warning("No se encontró información sobre símbolos disponibles. Verifica la conexión con Hyperliquid.")
+    st.warning("No se encontró información sobre símbolos disponibles. Verifica la conexión con Hyperliquid o actualiza manualmente.")
