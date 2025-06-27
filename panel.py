@@ -175,12 +175,13 @@ try:
 except Exception:
     pass
 
-# Barra de estado
+# Barra de estado (corregida)
+saldo_texto = f"{saldo:.2f} USDT" if saldo is not None else "N/A USDT"
 st.markdown(
     f"""
     <div class="status-line">
         <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
-        <div class="status-item">💰 Saldo: <strong>{saldo:.2f if saldo else 'N/A'} USDT</strong></div>
+        <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
         <div class="status-item">⚙️ Configuración desde archivo config.py</div>
     </div>
     """,
