@@ -76,7 +76,7 @@ PRECISION_POR_SIMBOLO = {
 }
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
-COOLDOWN_MINUTES = 15
+COOLDOWN_MINUTES = 5  # Reducido de 15 a 5 minutos
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
 RETRY_SLEEP = 2
@@ -186,10 +186,40 @@ def ajustar_precision(valor, precision):
 def obtener_posiciones_hyperliquid():
     try:
         account = retry_api_call(client.get_account)
+        # Registrar la respuesta completa para depuración
+        if account:
+            print("Respuesta de cuenta:", type(account))
+            
         # La estructura de user_state contiene 'assetPositions'
         if not account or "assetPositions" not in account:
+            print("No se encontró 'assetPositions' en la respuesta de la API")
             return []
-        posiciones_abiertas = [p for p in account["assetPositions"] if float(p.get('position', 0)) != 0]
+        
+        posiciones_abiertas = []
+        for p in account["assetPositions"]:
+            # Asegurarse de que position, entryPrice, y otros valores sean tipos primitivos
+            try:
+                position_value = p.get('position', 0)
+                # Verificar el tipo de dato antes de convertir
+                if isinstance(position_value, dict):
+                    print(f"Advertencia: 'position' es un diccionario para {p.get('asset', 'desconocido')}: {position_value}")
+                    continue  # Saltar esta posición problemática
+                
+                position = float(position_value)
+                if position != 0:  # Solo agregar posiciones reales (no cero)
+                    # Convertir explícitamente todos los valores a tipos primitivos
+                    posicion_formateada = {
+                        'asset': p.get('asset', ''),
+                        'position': position,
+                        'entryPrice': float(p.get('entryPrice', 0)),
+                        'unrealizedPnl': float(p.get('unrealizedPnl', 0)) if isinstance(p.get('unrealizedPnl'), (str, int, float)) else 0
+                    }
+                    posiciones_abiertas.append(posicion_formateada)
+            except (ValueError, TypeError) as e:
+                print(f"Error procesando posición {p}: {e}")
+                logging.error(f"Error procesando posición {p}: {e}")
+                continue  # Saltar esta posición problemática
+                
         return posiciones_abiertas
     except Exception as e:
         logging.error(f"Error al obtener posiciones Hyperliquid: {e}", exc_info=True)
