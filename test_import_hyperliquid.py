@@ -1,3 +1,3 @@
-from hyperliquid.v1.hyperliquid import Hyperliquid
+from hyperliquid_python_sdk import HyperliquidApi
 
 print("Importación exitosa")
