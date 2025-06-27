@@ -1,12 +1,13 @@
-import hyperliquid
+from hyperliquid import Hyperliquid
 from secret import WALLET_ADDRESS, WALLET_PRIVATE_KEY
+from config import API_URL
 
 class HyperliquidClient:
     def __init__(self):
-        self.client = hyperliquid.Client(
-            base_url="https://api.hyperliquid-testnet.xyz",
-            wallet_address=WALLET_ADDRESS,
-            wallet_private_key=WALLET_PRIVATE_KEY
+        self.client = Hyperliquid(
+            api_url=API_URL,
+            wallet_private_key=WALLET_PRIVATE_KEY,
+            wallet_address=WALLET_ADDRESS
         )
 
     def get_account(self):
