@@ -96,6 +96,10 @@ def obtener_simbolos_disponibles():
     with open("ultima_verificacion_simbolos.txt", "w") as f:
         f.write(datetime.now().isoformat())
     
+    # NUEVA LÍNEA: Guardar la lista de símbolos disponibles en un archivo
+    with open("simbolos_disponibles.txt", "w") as f:
+        f.write(",".join(simbolos_disponibles))
+    
     enviar_telegram(f"🔍 Símbolos disponibles para operar ({len(simbolos_disponibles)}/{len(todos_simbolos)}): {', '.join(simbolos_disponibles)}", tipo="info")
     return simbolos_disponibles
 
