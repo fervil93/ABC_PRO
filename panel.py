@@ -13,40 +13,115 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS simples
+# Estilos CSS mejorados
 st.markdown("""
 <style>
-    /* Estilos generales */
-    .block-container {padding-top: 1rem; padding-bottom: 1rem;}
-    h1 {font-size: 1.5rem; margin-bottom: 0.5rem;}
+    /* Estilos generales y centrado */
+    .block-container {
+        padding-top: 1rem; 
+        padding-bottom: 1rem;
+        max-width: 1200px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
     
-    /* Tabla más compacta */
-    .dataframe {width: 100%; font-size: 0.9rem;}
-    .dataframe th {background-color: #f1f3f5; text-align: left; padding: 5px;}
-    .dataframe td {padding: 5px;}
+    /* Tamaños de texto */
+    h1 {font-size: 1.5rem; margin-bottom: 0.5rem;}
+    h2 {font-size: 1.3rem; margin-bottom: 0.8rem;}
+    h3 {font-size: 1.1rem; margin-top: 1rem; margin-bottom: 0.5rem;}
+    
+    /* Tabla más profesional */
+    .dataframe {
+        width: 100%; 
+        font-size: 1rem;
+        border-collapse: collapse;
+    }
+    .dataframe th {
+        background-color: #f1f3f5; 
+        text-align: left; 
+        padding: 8px;
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+    }
+    .dataframe td {
+        padding: 8px;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .dataframe tr:hover {
+        background-color: #f8f9fa;
+    }
     
     /* Colores para PnL */
-    .profit {color: #28a745;}
-    .loss {color: #dc3545;}
+    .profit {color: #28a745; font-weight: 600;}
+    .loss {color: #dc3545; font-weight: 600;}
     
     /* Barra de estado */
     .status-line {
         display: flex;
         justify-content: space-between;
         background-color: #f8f9fa;
-        padding: 8px;
+        padding: 10px;
         border-radius: 5px;
-        margin-bottom: 15px;
-        font-size: 0.85rem;
+        margin-bottom: 20px;
+        font-size: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     .status-item {flex: 1; text-align: center;}
     
+    /* Config-Box */
+    .config-box {
+        background-color: #f8f9fa;
+        padding: 12px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        font-size: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .config-item {
+        display: inline-block;
+        margin-right: 20px;
+    }
+    .config-value {
+        font-weight: 600;
+    }
+    
     /* Mensaje */
     .mensaje {
-        padding: 8px;
+        padding: 10px;
         border-radius: 5px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        font-size: 1rem;
+    }
+    .mensaje.success {
+        background-color: #d4edda; 
+        color: #155724;
+        border-left: 5px solid #28a745;
+    }
+    .mensaje.error {
+        background-color: #f8d7da; 
+        color: #721c24;
+        border-left: 5px solid #dc3545;
+    }
+    
+    /* Símbolos disponibles */
+    .symbol-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .symbol-badge {
+        background-color: #e9ecef;
+        padding: 5px 10px;
+        border-radius: 4px;
         font-size: 0.9rem;
+        font-family: monospace;
+    }
+    
+    /* Botones más visibles */
+    .stButton > button {
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+        width: 100%;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -62,6 +137,25 @@ client = get_client()
 if 'mensaje' not in st.session_state:
     st.session_state.mensaje = None
     st.session_state.tipo_mensaje = None
+
+# Función para cargar configuración
+def cargar_configuracion():
+    try:
+        from config import LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
+        return {
+            "leverage": LEVERAGE,
+            "margin_per_trade": MARGIN_PER_TRADE,
+            "atr_tp_mult": ATR_TP_MULT,
+            "max_tp_pct": MAX_TP_PCT
+        }
+    except Exception as e:
+        print(f"Error al cargar configuración: {e}")
+        return {
+            "leverage": 10,
+            "margin_per_trade": 100,
+            "atr_tp_mult": 1.2,
+            "max_tp_pct": 0.02
+        }
 
 # Función para obtener datos directamente de Hyperliquid
 def obtener_datos_hyperliquid():
@@ -124,23 +218,13 @@ def obtener_datos_hyperliquid():
                     print(f"Error procesando posición: {e}")
                     continue
         
-        # Obtener configuración desde la API si está disponible
-        config = {}
-        try:
-            # Intentar obtener desde la API - simulado
-            pass
-        except Exception:
-            # Valores por defecto básicos (mínimo)
-            config = {"leverage": "N/A", "margin_per_trade": "N/A"}
-        
         return {
             'saldo': saldo,
-            'posiciones': posiciones,
-            'config': config
+            'posiciones': posiciones
         }
     except Exception as e:
         st.error(f"Error al obtener datos de Hyperliquid: {e}")
-        return {'saldo': None, 'posiciones': [], 'config': {}}
+        return {'saldo': None, 'posiciones': []}
 
 # Función para cerrar posición
 def cerrar_posicion(symbol, position_amount):
@@ -175,14 +259,27 @@ try:
 except Exception:
     pass
 
-# Barra de estado (corregida)
+# Barra de estado
 saldo_texto = f"{saldo:.2f} USDT" if saldo is not None else "N/A USDT"
 st.markdown(
     f"""
     <div class="status-line">
         <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
         <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
-        <div class="status-item">⚙️ Configuración desde archivo config.py</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Mostrar configuración desde config.py
+config = cargar_configuracion()
+st.markdown(
+    f"""
+    <div class="config-box">
+        <div class="config-item">🔧 Apalancamiento: <span class="config-value">{config['leverage']}×</span></div>
+        <div class="config-item">💵 Margen por trade: <span class="config-value">{config['margin_per_trade']} USDT</span></div>
+        <div class="config-item">📈 Take Profit: <span class="config-value">{config['atr_tp_mult']}×ATR</span></div>
+        <div class="config-item">🔒 TP Máx: <span class="config-value">{config['max_tp_pct']*100}%</span></div>
     </div>
     """,
     unsafe_allow_html=True
@@ -190,7 +287,7 @@ st.markdown(
 
 # Mostrar mensajes si hay
 if st.session_state.mensaje:
-    msg_class = "mensaje" + (" profit" if st.session_state.tipo_mensaje == "success" else " loss")
+    msg_class = f"mensaje {'success' if st.session_state.tipo_mensaje == 'success' else 'error'}"
     st.markdown(
         f'<div class="{msg_class}">{st.session_state.mensaje}</div>',
         unsafe_allow_html=True
@@ -247,7 +344,7 @@ else:
                     st.session_state.mensaje = mensaje
                     st.session_state.tipo_mensaje = "success" if success else "error"
                     time.sleep(1)  # Pequeña pausa
-                    st.experimental_rerun()
+                    st.rerun()  # Correcto en versiones recientes de Streamlit
 
 # Pares disponibles (simple)
 st.markdown("### Pares Disponibles")
@@ -260,7 +357,8 @@ except Exception:
     pass
 
 if simbolos:
-    st.write(" | ".join([f"`{s}`" for s in simbolos]))
+    simbolos_html = "".join([f'<span class="symbol-badge">{s}</span>' for s in simbolos])
+    st.markdown(f'<div class="symbol-container">{simbolos_html}</div>', unsafe_allow_html=True)
 else:
     st.info("No hay pares disponibles.")
 
