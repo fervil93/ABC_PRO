@@ -188,7 +188,7 @@ def obtener_posiciones_hyperliquid():
         account = retry_api_call(client.get_account)
         # Registrar la respuesta completa para depuración
         if account:
-            print("Respuesta de cuenta:", type(account))
+            print(f"Respuesta de cuenta: {type(account)}")
             
         # La estructura de user_state contiene 'assetPositions'
         if not account or "assetPositions" not in account:
@@ -197,22 +197,54 @@ def obtener_posiciones_hyperliquid():
         
         posiciones_abiertas = []
         for p in account["assetPositions"]:
-            # Asegurarse de que position, entryPrice, y otros valores sean tipos primitivos
             try:
-                position_value = p.get('position', 0)
-                # Verificar el tipo de dato antes de convertir
-                if isinstance(position_value, dict):
-                    print(f"Advertencia: 'position' es un diccionario para {p.get('asset', 'desconocido')}: {position_value}")
-                    continue  # Saltar esta posición problemática
+                # Extraer el símbolo/asset
+                symbol = p.get('asset', '')
                 
-                position = float(position_value)
-                if position != 0:  # Solo agregar posiciones reales (no cero)
-                    # Convertir explícitamente todos los valores a tipos primitivos
+                # Manejar la estructura anidada de 'position' si es un diccionario
+                position_value = p.get('position', 0)
+                if isinstance(position_value, dict):
+                    print(f"[INFO] 'position' para {symbol} es un diccionario, extrayendo valor...")
+                    # Intentar diferentes claves conocidas que podría contener el diccionario
+                    if 'value' in position_value:
+                        position_float = float(position_value.get('value', 0))
+                    else:
+                        # Si no encontramos una clave conocida, registrar y continuar
+                        print(f"[ADVERTENCIA] No se pudo extraer valor numérico de position para {symbol}: {position_value}")
+                        continue
+                else:
+                    position_float = float(position_value)
+                
+                # Solo procesar posiciones no-cero
+                if position_float != 0:
+                    # Manejar entryPrice si también es un diccionario
+                    entry_price_value = p.get('entryPx', 0)
+                    if isinstance(entry_price_value, dict):
+                        if 'value' in entry_price_value:
+                            entry_price_float = float(entry_price_value.get('value', 0))
+                        else:
+                            entry_price_float = 0
+                            print(f"[ADVERTENCIA] No se pudo extraer entryPrice para {symbol}: {entry_price_value}")
+                    else:
+                        entry_price_float = float(entry_price_value)
+                    
+                    # Manejar unrealizedPnl si también es un diccionario
+                    unrealized_pnl_value = p.get('unrealizedPnl', 0)
+                    if isinstance(unrealized_pnl_value, dict):
+                        if 'value' in unrealized_pnl_value:
+                            unrealized_pnl_float = float(unrealized_pnl_value.get('value', 0))
+                        else:
+                            unrealized_pnl_float = 0
+                            print(f"[ADVERTENCIA] No se pudo extraer unrealizedPnl para {symbol}: {unrealized_pnl_value}")
+                    else:
+                        unrealized_pnl_float = float(unrealized_pnl_value) if isinstance(unrealized_pnl_value, (str, int, float)) else 0
+                    
+                    # Crear una posición formateada con todos los valores convertidos adecuadamente
                     posicion_formateada = {
-                        'asset': p.get('asset', ''),
-                        'position': position,
-                        'entryPrice': float(p.get('entryPrice', 0)),
-                        'unrealizedPnl': float(p.get('unrealizedPnl', 0)) if isinstance(p.get('unrealizedPnl'), (str, int, float)) else 0
+                        'asset': symbol,
+                        'position': position_float,
+                        'entryPrice': entry_price_float,
+                        'unrealizedPnl': unrealized_pnl_float
                     }
                     posiciones_abiertas.append(posicion_formateada)
             except (ValueError, TypeError) as e:
