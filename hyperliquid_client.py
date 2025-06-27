@@ -14,11 +14,13 @@ class HyperliquidClient:
         return self.client.account_state()
 
     def get_ohlcv(self, symbol, interval, limit):
-        return self.client.candles(
+        # El SDK usa pares tipo "BTCUSDT"
+        df = self.client.candles(
             symbol=symbol + "USDT",
             interval=interval,
             limit=limit
         )
+        return df
 
     def get_order_book(self, symbol):
         return self.client.orderbook(symbol + "USDT")
@@ -28,6 +30,7 @@ class HyperliquidClient:
         return {'price': ticker['last']}
 
     def create_order(self, symbol, side, size):
+        # side: 'buy' o 'sell'
         return self.client.market_order(
             symbol=symbol + "USDT",
             side=side,
