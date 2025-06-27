@@ -49,9 +49,6 @@ BREAKOUT_ATR_MULT_POR_SIMBOLO = {
 }
 
 # Definir la precisión para cada símbolo según las reglas de Hyperliquid
-# Para tokens de bajo precio (DOGE, SHIB, etc.) usamos 0 (enteros)
-# Para tokens de precio medio (SOL, ARB, etc.) usamos 1 decimal
-# Para tokens de alto precio (BTC, ETH) usamos más precisión
 PRECISION_POR_SIMBOLO = {
     "BTC": 3,  # 0.001 BTC
     "ETH": 2,  # 0.01 ETH
@@ -80,11 +77,13 @@ TP_ORDERS_FILE = "tp_orders.json"
 COOLDOWN_MINUTES = 5  # Reducido de 15 a 5 minutos
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
-RETRY_SLEEP = 5  # Aumentar de 2 a 5 segundos entre reintentos
+RETRY_SLEEP = 5  # Aumentado de 2 a 5 segundos
 VOLATILITY_WINDOW = 10
 VOLATILITY_UMBRAL = 0.015
 REEVALUACION_SIMBOLOS_HORAS = 6  # Frecuencia para reevaluar símbolos
 DEBUG = False  # Controla el verbose
+VERIFICACION_CIERRE_INTENTOS = 3  # Número de intentos para verificar cierre
+VERIFICACION_CIERRE_ESPERA = 3  # Segundos entre verificaciones
 
 resumen_diario = {
     "trades_abiertos": 0,
@@ -320,6 +319,9 @@ def obtener_posiciones_hyperliquid():
 
 def obtener_datos_historicos(symbol, interval='1m', limit=100):
     try:
+        # Importamos pandas aquí para asegurar que está disponible
+        import pandas as pd
+        
         # No enviamos notificaciones por errores de datos históricos
         df = client.get_ohlcv(symbol, interval, limit)
         if df is None:
@@ -713,9 +715,45 @@ def verificar_ordenes_tp_pendientes():
         print(f"Error verificando órdenes TP pendientes: {e}")
         logging.error(f"Error verificando órdenes TP pendientes: {e}", exc_info=True)
 
+def verificar_posicion_cerrada(symbol):
+    """
+    Verifica si una posición específica ha sido cerrada
+    
+    Args:
+        symbol (str): Símbolo del par a verificar
+    
+    Returns:
+        bool: True si la posición está cerrada (no existe), False si sigue abierta
+    """
+    try:
+        # Obtener todas las posiciones actuales
+        posiciones = obtener_posiciones_hyperliquid()
+        
+        # Verificar si el símbolo aparece en alguna posición
+        for pos in posiciones:
+            if pos.get('asset', '').upper() == symbol.upper():
+                # Si el símbolo aparece, la posición sigue abierta
+                return False
+        
+        # Si llegamos aquí, no se encontró el símbolo en ninguna posición, está cerrada
+        return True
+    except Exception as e:
+        print(f"Error verificando si la posición está cerrada para {symbol}: {e}")
+        logging.error(f"Error verificando si la posición está cerrada para {symbol}: {e}", exc_info=True)
+        # En caso de error, asumimos que no podemos confirmar que esté cerrada
+        return False
+
 def cerrar_posicion(symbol, positionAmt):
     """
     Cierra una posición y cancela cualquier orden TP pendiente
+    
+    Args:
+        symbol (str): Símbolo del par de trading
+        positionAmt (float): Cantidad de la posición actual
+    
+    Returns:
+        dict: Respuesta de la orden de cierre o None si hay error
+        bool: True si se confirmó el cierre, False en caso contrario
     """
     try:
         # Primero cancelar órdenes TP pendientes
@@ -741,17 +779,30 @@ def cerrar_posicion(symbol, positionAmt):
             quantity  # Cantidad
         )
         
-        if order and "status" in order:
-            print(f"Posición cerrada para {symbol}: {order}")
-            return order
-        else:
-            enviar_telegram(f"⚠️ Error al cerrar posición para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
+        if not order or "status" not in order:
             logging.error(f"Error al cerrar posición para {symbol}")
-            return None
+            enviar_telegram(f"⚠️ Error al cerrar posición para {symbol} tras {MAX_RETRIES} intentos.", tipo="error")
+            return None, False
+        
+        print(f"[{symbol}] Intento de cierre exitoso. Verificando confirmación...")
+        
+        # NUEVO: Verificar que la posición realmente se haya cerrado
+        cierre_confirmado = False
+        for intento in range(VERIFICACION_CIERRE_INTENTOS):
+            time.sleep(VERIFICACION_CIERRE_ESPERA)
+            if verificar_posicion_cerrada(symbol):
+                cierre_confirmado = True
+                print(f"[{symbol}] Cierre de posición confirmado en intento {intento+1}/{VERIFICACION_CIERRE_INTENTOS}")
+                break
+            else:
+                print(f"[{symbol}] Posición aún abierta en verificación {intento+1}/{VERIFICACION_CIERRE_INTENTOS}")
+        
+        return order, cierre_confirmado
+            
     except Exception as e:
         logging.error(f"Error al cerrar posición para {symbol}: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al cerrar posición para {symbol}: {e}", tipo="error")
-        return None
+        return None, False
 
 def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     """
@@ -774,11 +825,17 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
 
         # Verificar si el precio ha alcanzado el TP y cerrar manualmente (respaldo)
         if (direccion == "BUY" and precio_actual >= tp) or (direccion == "SELL" and precio_actual <= tp):
-            print(f"[{symbol}] Cerrando como respaldo (TP en exchange no ejecutado). Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
-            order = cerrar_posicion(symbol, positionAmt)
+            print(f"[{symbol}] TP alcanzado, intentando cerrar posición. Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
+            order, cierre_confirmado = cerrar_posicion(symbol, positionAmt)
             
             if order:
-                time.sleep(2)
+                if not cierre_confirmado:
+                    print(f"[{symbol}] ⚠️ ADVERTENCIA: Se envió orden de cierre pero la posición sigue abierta")
+                    enviar_telegram(f"⚠️ ADVERTENCIA: Se envió orden de cierre para {symbol} pero la posición sigue abierta. Verifique manualmente.", tipo="warning")
+                    # No enviar notificación de cierre ni limpiar niveles hasta confirmar el cierre real
+                    return False
+                    
+                # Si llegamos aquí, el cierre está confirmado
                 pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
                 icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
                 pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
@@ -799,6 +856,7 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                     guardar_niveles_atr(niveles_atr)
                 
                 return True
+                
     except Exception as e:
         print(f"Error en evaluar_cierre_operacion_hyperliquid: {e}")
         logging.error(f"Error en evaluar_cierre_operacion_hyperliquid: {e}", exc_info=True)
@@ -863,6 +921,53 @@ def abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
         print("No hay saldo suficiente para operar.")
         return False
 
+def cerrar_posiciones_huerfanas():
+    """
+    Identifica y cierra posiciones 'huérfanas' que no tienen un TP registrado
+    """
+    try:
+        # Obtener posiciones actuales y niveles ATR/TP
+        posiciones = obtener_posiciones_hyperliquid()
+        niveles_atr = cargar_niveles_atr()
+        
+        # Verificar cada posición para ver si tiene niveles TP asociados
+        for pos in posiciones:
+            symbol = pos['asset']
+            
+            # Si esta posición no tiene un nivel TP registrado
+            if symbol not in niveles_atr:
+                print(f"[{symbol}] Posición huérfana detectada (sin TP registrado)")
+                
+                # Decidir si cerrarla automáticamente
+                positionAmt = float(pos['position'])
+                entryPrice = float(pos['entryPrice'])
+                unrealizedPnl = float(pos.get('unrealizedPnl', 0))
+                
+                # Por seguridad, solo cerramos posiciones huérfanas con PnL positivo
+                if unrealizedPnl > 0:
+                    print(f"[{symbol}] Cerrando posición huérfana con PnL positivo: {unrealizedPnl}")
+                    order, cierre_confirmado = cerrar_posicion(symbol, positionAmt)
+                    
+                    if order and cierre_confirmado:
+                        precio_actual = obtener_precio_hyperliquid(symbol)
+                        if precio_actual is None:
+                            precio_actual = entryPrice  # Fallback
+                        
+                        direccion = "BUY" if positionAmt > 0 else "SELL"
+                        enviar_telegram(
+                            f"🟡 Trade HUÉRFANO CERRADO: {symbol} {direccion}\n"
+                            f"Entry: {entryPrice:.4f}\n"
+                            f"Close: {precio_actual:.4f}\n"
+                            f"PnL: {unrealizedPnl:.4f}",
+                            tipo="close"
+                        )
+                else:
+                    print(f"[{symbol}] Posición huérfana con PnL negativo: {unrealizedPnl}, no se cierra automáticamente")
+                    
+    except Exception as e:
+        print(f"Error verificando posiciones huérfanas: {e}")
+        logging.error(f"Error verificando posiciones huérfanas: {e}", exc_info=True)
+
 if __name__ == "__main__":
     try:
         # Primero verificamos los símbolos disponibles
@@ -875,10 +980,11 @@ if __name__ == "__main__":
         # Ahora enviamos un solo mensaje de inicio con toda la información
         enviar_telegram(f"🚀 Bot arrancado correctamente y en ejecución.\n\n🔍 Símbolos disponibles para operar ({len(simbolos)}/{20}): {', '.join(simbolos)}", tipo="info")
             
-        intervalo_segundos = 10  # Aumentar de 5 a 10 segundos el ciclo principal
+        intervalo_segundos = 10  # Aumentado a 10 segundos para reducir carga en API
         tiempo_inicio = datetime.now()
         last_trade_time = None
         ultima_reevaluacion = datetime.now()
+        ultimo_chequeo_huerfanas = datetime.now()
 
         print("Iniciando bot de scalping microestructura v2 con TP en exchange (Hyperliquid Testnet)...")
         print(f"Configuración: Apalancamiento={LEVERAGE}x | Margen por operación={MARGIN_PER_TRADE} USDT")
@@ -944,9 +1050,15 @@ if __name__ == "__main__":
                     if symbol in niveles_atr:
                         del niveles_atr[symbol]
                         guardar_niveles_atr(niveles_atr)
-
-            # --- Espera cooldown tras un trade abierto ---
+            
+            # Verificar posiciones huérfanas (sin TP registrado) cada hora
             now = datetime.now()
+            if (now - ultimo_chequeo_huerfanas).total_seconds() > 3600:  # 3600 segundos = 1 hora
+                print("Verificando posiciones huérfanas...")
+                cerrar_posiciones_huerfanas()
+                ultimo_chequeo_huerfanas = now
+            
+            # --- Espera cooldown tras un trade abierto ---
             if last_trade_time and (now - last_trade_time) < timedelta(minutes=COOLDOWN_MINUTES):
                 restante = timedelta(minutes=COOLDOWN_MINUTES) - (now - last_trade_time)
                 print(f"En cooldown tras última apertura. Esperando {restante} antes de poder abrir otro trade.")
