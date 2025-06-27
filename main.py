@@ -543,20 +543,23 @@ def crear_orden_tp_hyperliquid(symbol, side, quantity, price):
         dict: Respuesta de la API o None si hay error
     """
     try:
-        # La API de Hyperliquid utiliza create_order con type='limit' para órdenes límite
+        # La API de Hyperliquid necesita ser llamada de manera diferente para órdenes límite
         precision = PRECISION_POR_SIMBOLO.get(symbol, 0)
         price_rounded = round(price, precision + 2)  # Más precisión para el precio
         
         # Para debugging
         print(f"[{symbol}] Creando orden TP: {side} {quantity} @ {price_rounded}")
         
+        # Implementamos la lógica para crear una orden límite usando la API disponible
+        is_buy = side.lower() == "buy"
+        
+        # Llamar a limit_order en lugar de create_order con el parámetro type
         orden = retry_api_call(
-            client.create_order,
-            symbol=symbol,
-            side=side.lower(),
-            size=quantity,
-            type='limit',
-            price=price_rounded
+            client.exchange.limit_order,
+            coin=symbol,
+            is_buy=is_buy,
+            sz=quantity,
+            limit_px=price_rounded
         )
         
         if orden and "status" in orden:
@@ -591,8 +594,8 @@ def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
             client.create_order, 
             symbol=symbol, 
             side=side.lower(), 
-            size=quantity,
-            type='market'  # Asegurarnos que sea orden de mercado
+            size=quantity
+            # Eliminado el parámetro type='market' que causaba el error
         )
         
         if not orden_principal or "status" not in orden_principal:
@@ -635,7 +638,7 @@ def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
         logging.error(f"Error al ejecutar orden con TP para {symbol}: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al ejecutar orden con TP para {symbol}: {e}", tipo="error")
         return None, None
-
+        
 def verificar_ordenes_tp_pendientes():
     """
     Verifica si hay órdenes TP pendientes y las sincroniza con las posiciones actuales
