@@ -12,8 +12,7 @@ from config import (
 )
 from secret import WALLET_ADDRESS
 from notificaciones import enviar_telegram
-
-from hyperliquid_client import HyperliquidClient  # Nuevo cliente adaptado
+from hyperliquid_client import HyperliquidClient
 
 # --- CONFIGURACIÓN LOGGING ---
 logging.basicConfig(
@@ -22,7 +21,6 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(message)s'
 )
 
-# Guarda en fichero TXT la hora de arranque
 with open("tiempo_inicio_bot.txt", "w") as f:
     f.write(datetime.now().isoformat())
 
@@ -31,48 +29,21 @@ client = HyperliquidClient()
 ATR_SL_MULT = 1.0
 MIN_POTENTIAL_PROFIT = 0.5
 
-# --- Parámetros por símbolo ---
 SPREAD_MAX_PCT_POR_SIMBOLO = {
-    "BTC": 1.0,
-    "ETH": 1.0,
-    "BNB": 1.0,
-    "SOL": 1.5,
-    "XRP": 2.0,
-    "ADA": 1.5,
-    "DOGE": 1.5,
-    "AVAX": 1.5,
-    "TON": 1.5,
-    "LINK": 1.5,
+    "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 1.5, "XRP": 2.0, "ADA": 1.5,
+    "DOGE": 1.5, "AVAX": 1.5, "TON": 1.5, "LINK": 1.5,
 }
 MULTIPLICADOR_VOL_POR_SIMBOLO = {
-    "BTC": 1.0,
-    "ETH": 1.0,
-    "BNB": 1.0,
-    "SOL": 0.8,
-    "XRP": 0.8,
-    "ADA": 0.8,
-    "DOGE": 0.8,
-    "AVAX": 0.8,
-    "TON": 0.8,
-    "LINK": 0.8,
+    "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 0.8, "XRP": 0.8,
+    "ADA": 0.8, "DOGE": 0.8, "AVAX": 0.8, "TON": 0.8, "LINK": 0.8,
 }
 BREAKOUT_ATR_MULT_POR_SIMBOLO = {
-    "BTC": 0.1,
-    "ETH": 0.1,
-    "BNB": 0.1,
-    "SOL": 0.05,
-    "XRP": 0.05,
-    "ADA": 0.05,
-    "DOGE": 0.05,
-    "AVAX": 0.05,
-    "TON": 0.05,
-    "LINK": 0.05,
+    "BTC": 0.1, "ETH": 0.1, "BNB": 0.1, "SOL": 0.05, "XRP": 0.05,
+    "ADA": 0.05, "DOGE": 0.05, "AVAX": 0.05, "TON": 0.05, "LINK": 0.05,
 }
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
 COOLDOWN_MINUTES = 15
-
-# --- Parámetros globales ---
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
 RETRY_SLEEP = 2
@@ -137,12 +108,15 @@ def obtener_posiciones_hyperliquid():
 
 def obtener_datos_historicos(symbol, interval='1m', limit=100):
     try:
-        # Hyperliquid sólo soporta intervalos específicos, adaptar si es necesario
         df = client.get_ohlcv(symbol, interval, limit)
         if df is None:
             enviar_telegram(f"⚠️ Error al obtener datos históricos para {symbol}.", tipo="error")
             logging.error(f"Error al obtener datos históricos para {symbol}")
             return None
+        # Adaptar, SDK puede devolver lista o DataFrame
+        if isinstance(df, list):
+            df = pd.DataFrame(df)
+            df.columns = ['timestamp','open','high','low','close','volume']
         return df
     except Exception as e:
         logging.error(f"Error al obtener datos históricos para {symbol}: {e}", exc_info=True)
@@ -319,7 +293,7 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
         entryPrice = float(pos['entryPrice'])
         positionAmt = float(pos['size'])
         qty = abs(positionAmt)
-        symbol = pos['symbol']
+        symbol = pos['symbol'].replace("USDT", "")
         direccion = "BUY" if positionAmt > 0 else "SELL"
 
         niveles = niveles_atr.get(symbol)
@@ -372,7 +346,6 @@ if __name__ == "__main__":
     try:
         enviar_telegram("🚀 Bot arrancado correctamente y en ejecución.", tipo="info")
 
-        # Top 10 pares principales manualmente (puedes ajustarlos según disponibilidad en Hyperliquid)
         simbolos = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'AVAX', 'TON', 'LINK']
         intervalo_segundos = 5
         tiempo_inicio = datetime.now()
@@ -390,7 +363,7 @@ if __name__ == "__main__":
 
             print(f"Posiciones abiertas en Hyperliquid ({len(posiciones)}):")
             for pos in posiciones:
-                symbol = pos['symbol']
+                symbol = pos['symbol'].replace("USDT", "")
                 positionAmt = pos['size']
                 entryPrice = pos['entryPrice']
                 pnl = pos.get('unrealizedPnl', 0)
@@ -398,7 +371,7 @@ if __name__ == "__main__":
 
             # --- Evaluación de cierre ---
             for pos in posiciones:
-                symbol = pos['symbol']
+                symbol = pos['symbol'].replace("USDT", "")
                 precio_actual = obtener_precio_hyperliquid(symbol)
                 if precio_actual is None:
                     continue
@@ -418,7 +391,7 @@ if __name__ == "__main__":
             # --- Solo se permite una apertura nueva por ciclo ---
             apertura_realizada = False
             for simbolo in simbolos:
-                ya_abierta = any(pos['symbol'] == simbolo for pos in posiciones)
+                ya_abierta = any(pos['symbol'].replace("USDT", "") == simbolo for pos in posiciones)
                 if ya_abierta or apertura_realizada:
                     continue
 
@@ -452,7 +425,6 @@ if __name__ == "__main__":
                             orden = ejecutar_orden_hyperliquid(simbolo, accion, cantidad_valida)
                             if orden:
                                 tp = calcular_tp_atr(entry_price, atr, accion)
-                                # --- Guardar solo TP FIJO ---
                                 niveles_atr[simbolo] = {"tp_fijo": tp}
                                 guardar_niveles_atr(niveles_atr)
                                 print(f"[{simbolo}] Trade ejecutado ({accion}) | ATR: {atr:.4f} | TP FIJO: {tp:.4f} | Configuración TP: {ATR_TP_MULT}xATR (máx {MAX_TP_PCT*100:.1f}% sobre entrada)")
