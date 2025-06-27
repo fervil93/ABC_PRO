@@ -129,6 +129,14 @@ def obtener_simbolos_disponibles():
     
     return simbolos_disponibles
 
+def verificar_posicion_existente(simbolo, posiciones):
+    """Verifica si ya existe una posición abierta para el símbolo dado"""
+    for pos in posiciones:
+        asset = pos.get('asset', '').upper()
+        if asset == simbolo.upper():
+            return True
+    return False
+
 def verificar_tiempo_para_reevaluar():
     """Verifica si es momento de reevaluar los símbolos disponibles"""
     try:
@@ -199,45 +207,44 @@ def obtener_posiciones_hyperliquid():
         for p in account["assetPositions"]:
             try:
                 # Extraer el símbolo/asset
-                symbol = p.get('asset', '')
+                symbol = p.get('coin', '')  # Cambiado de 'asset' a 'coin' según los logs
                 
-                # Manejar la estructura anidada de 'position' si es un diccionario
-                position_value = p.get('position', 0)
-                if isinstance(position_value, dict):
-                    print(f"[INFO] 'position' para {symbol} es un diccionario, extrayendo valor...")
-                    # Intentar diferentes claves conocidas que podría contener el diccionario
-                    if 'value' in position_value:
-                        position_float = float(position_value.get('value', 0))
-                    else:
-                        # Si no encontramos una clave conocida, registrar y continuar
-                        print(f"[ADVERTENCIA] No se pudo extraer valor numérico de position para {symbol}: {position_value}")
-                        continue
+                # Si no hay símbolo, intentar otra clave
+                if not symbol:
+                    symbol = p.get('asset', '')
+                
+                # Intentar extraer la cantidad de la posición (szi parece ser la clave según los logs)
+                if 'szi' in p:
+                    try:
+                        position_float = float(p['szi'])
+                        position_non_zero = abs(position_float) > 0.0001
+                    except (ValueError, TypeError):
+                        print(f"[ADVERTENCIA] No se pudo convertir szi a float para {symbol}: {p.get('szi')}")
+                        position_float = 0
+                        position_non_zero = False
                 else:
-                    position_float = float(position_value)
+                    # Si no hay 'szi', intentar otras formas de obtener la posición
+                    print(f"[INFO] 'position' para {symbol} es un diccionario, extrayendo valor...")
+                    position_float = 0
+                    position_non_zero = False
                 
                 # Solo procesar posiciones no-cero
-                if position_float != 0:
-                    # Manejar entryPrice si también es un diccionario
-                    entry_price_value = p.get('entryPx', 0)
-                    if isinstance(entry_price_value, dict):
-                        if 'value' in entry_price_value:
-                            entry_price_float = float(entry_price_value.get('value', 0))
-                        else:
-                            entry_price_float = 0
-                            print(f"[ADVERTENCIA] No se pudo extraer entryPrice para {symbol}: {entry_price_value}")
-                    else:
-                        entry_price_float = float(entry_price_value)
+                if position_non_zero:
+                    # Obtener el precio de entrada
+                    entry_price_float = 0
+                    if 'entryPx' in p:
+                        try:
+                            entry_price_float = float(p['entryPx'])
+                        except (ValueError, TypeError):
+                            print(f"[ADVERTENCIA] No se pudo extraer entryPx para {symbol}: {p.get('entryPx')}")
                     
-                    # Manejar unrealizedPnl si también es un diccionario
-                    unrealized_pnl_value = p.get('unrealizedPnl', 0)
-                    if isinstance(unrealized_pnl_value, dict):
-                        if 'value' in unrealized_pnl_value:
-                            unrealized_pnl_float = float(unrealized_pnl_value.get('value', 0))
-                        else:
-                            unrealized_pnl_float = 0
-                            print(f"[ADVERTENCIA] No se pudo extraer unrealizedPnl para {symbol}: {unrealized_pnl_value}")
-                    else:
-                        unrealized_pnl_float = float(unrealized_pnl_value) if isinstance(unrealized_pnl_value, (str, int, float)) else 0
+                    # Obtener PnL no realizado
+                    unrealized_pnl_float = 0
+                    if 'unrealizedPnl' in p:
+                        try:
+                            unrealized_pnl_float = float(p['unrealizedPnl'])
+                        except (ValueError, TypeError):
+                            print(f"[ADVERTENCIA] No se pudo extraer unrealizedPnl para {symbol}: {p.get('unrealizedPnl')}")
                     
                     # Crear una posición formateada con todos los valores convertidos adecuadamente
                     posicion_formateada = {
@@ -247,7 +254,7 @@ def obtener_posiciones_hyperliquid():
                         'unrealizedPnl': unrealized_pnl_float
                     }
                     posiciones_abiertas.append(posicion_formateada)
-            except (ValueError, TypeError) as e:
+            except Exception as e:
                 print(f"Error procesando posición {p}: {e}")
                 logging.error(f"Error procesando posición {p}: {e}")
                 continue  # Saltar esta posición problemática
@@ -591,6 +598,10 @@ if __name__ == "__main__":
             posiciones = obtener_posiciones_hyperliquid()
             niveles_atr = cargar_niveles_atr()
 
+            # Imprimir símbolos con posiciones abiertas para depuración
+            simbolos_abiertos = [pos.get('asset', '').upper() for pos in posiciones]
+            print(f"Símbolos con posiciones abiertas: {simbolos_abiertos}")
+
             print(f"Posiciones abiertas en Hyperliquid ({len(posiciones)}):")
             for pos in posiciones:
                 symbol = pos['asset']
@@ -621,8 +632,13 @@ if __name__ == "__main__":
             # --- Solo se permite una apertura nueva por ciclo ---
             apertura_realizada = False
             for simbolo in simbolos:
-                ya_abierta = any(pos['asset'] == simbolo for pos in posiciones)
-                if ya_abierta or apertura_realizada:
+                # Usar la nueva función para verificar posiciones existentes
+                ya_abierta = verificar_posicion_existente(simbolo, posiciones)
+                if ya_abierta:
+                    print(f"Ya existe una posición abierta para {simbolo}. Se omite.")
+                    continue
+                
+                if apertura_realizada:
                     continue
 
                 print(f"\nEvaluando condiciones microestructura para {simbolo}...")
