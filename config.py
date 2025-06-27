@@ -8,7 +8,7 @@ TIMEOUT_MINUTES = 99999999999
 LEVERAGE = 10
 
 # Margen (USDT) que quieres arriesgar por cada operación
-MARGIN_PER_TRADE = 100
+MARGIN_PER_TRADE = 200
 
 # Multiplicador ATR para calcular TP
 ATR_TP_MULT = 1.2
