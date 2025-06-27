@@ -1,46 +1,37 @@
-import hyperliquid
-from eth_account import Account
-from config import API_URL
-from secret import WALLET_ADDRESS, WALLET_PRIVATE_KEY
+from hyperliquid import Hyperliquid
+from secret import WALLET_PRIVATE_KEY, WALLET_ADDRESS
 
 class HyperliquidClient:
     def __init__(self):
-        self.client = hyperliquid.Exchange(api_url=API_URL)
-        self.wallet_address = WALLET_ADDRESS
-        self.wallet_private_key = WALLET_PRIVATE_KEY
+        # Si solo quieres leer datos, puedes usar Hyperliquid() sin clave privada.
+        # Para operar (testnet/mainnet), inicializa con la clave privada.
+        self.hl = Hyperliquid(WALLET_PRIVATE_KEY)
 
     def get_account(self):
-        # Estado público de la cuenta
-        return self.client.get_user_state(self.wallet_address)
+        # Estado de la cuenta (user_state requiere address)
+        return self.hl.info.user_state(WALLET_ADDRESS)
 
     def get_ohlcv(self, symbol, interval, limit):
-        return self.client.candles(symbol + "USDT", interval, limit)
+        # symbol: "BTC", "ETH"...
+        # interval: "1m", "5m", "1h", etc.
+        # limit: número de velas
+        return self.hl.info.candles(symbol, interval, limit)
 
     def get_order_book(self, symbol):
-        return self.client.orderbook(symbol + "USDT")
+        # symbol: "BTC", "ETH"...
+        return self.hl.info.l2_book(symbol)
 
     def get_price(self, symbol):
-        ticker = self.client.ticker(symbol + "USDT")
-        return {'price': ticker['mark']}
+        # symbol: "BTC", "ETH"...
+        # Devuelve el mejor precio bid y ask
+        ob = self.hl.info.l2_book(symbol)
+        return {
+            "best_bid": float(ob["bids"][0][0]) if ob["bids"] else None,
+            "best_ask": float(ob["asks"][0][0]) if ob["asks"] else None,
+            "mid": (float(ob["bids"][0][0]) + float(ob["asks"][0][0])) / 2 if ob["bids"] and ob["asks"] else None
+        }
 
     def create_order(self, symbol, side, size):
-        # Hyperliquid espera size en unidades del activo (no USDT)
-        # El side debe ser "buy" o "sell"
-        # El SDK requiere firma EIP-712
-        # La orden es de tipo mercado (market)
-        payload = {
-            "coin": symbol + "USDT",
-            "is_buy": True if side.lower() == "buy" else False,
-            "sz": str(size),
-            "limit_px": None,   # Market order
-            "reduce_only": False,
-        }
-        # Firma usando la clave privada
-        signed = self.client.prepare_order(
-            address=self.wallet_address,
-            priv_key=self.wallet_private_key,
-            **payload
-        )
-        # Enviar orden firmada
-        resp = self.client.place_order(signed)
-        return resp
+        # side: "buy" o "sell"
+        is_buy = True if side.lower() == "buy" else False
+        return self.hl.order.market(symbol, size, is_buy=is_buy)
