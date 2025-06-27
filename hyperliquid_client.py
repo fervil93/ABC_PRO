@@ -41,38 +41,48 @@ class HyperliquidClient:
             limit (int): Cantidad de velas a obtener
         
         Returns:
-            list: Lista de diccionarios con datos OHLCV
+            list: Lista de diccionarios con datos OHLCV o None si hay error
         """
-        # Calcular timestamps (en milisegundos)
-        end_time = int(time.time() * 1000)
-        
-        # Mapea los intervalos a segundos
-        interval_segundos = {
-            "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
-            "1h": 3600, "4h": 14400, "1d": 86400
-        }
-        
-        # Calcula el tiempo de inicio basado en el intervalo y límite
-        segundos = interval_segundos.get(interval, 60) * limit
-        start_time = end_time - (segundos * 1000)
-        
-        # Obtiene los datos de velas
-        candles_data = self.info.candles_snapshot(symbol, interval, start_time, end_time)
-        
-        # Reformatea la respuesta para mantener la compatibilidad con tu código existente
-        formatted_candles = []
-        for candle in candles_data:
-            formatted_candle = {
-                'timestamp': candle['t'],
-                'open': float(candle['o']),
-                'high': float(candle['h']), 
-                'low': float(candle['l']), 
-                'close': float(candle['c']),
-                'volume': float(candle['v'])
+        try:
+            # Calcular timestamps (en milisegundos)
+            end_time = int(time.time() * 1000)
+            
+            # Mapea los intervalos a segundos
+            interval_segundos = {
+                "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+                "1h": 3600, "4h": 14400, "1d": 86400
             }
-            formatted_candles.append(formatted_candle)
-        
-        return formatted_candles
+            
+            # Calcula el tiempo de inicio basado en el intervalo y límite
+            segundos = interval_segundos.get(interval, 60) * limit
+            start_time = end_time - (segundos * 1000)
+            
+            # Obtiene los datos de velas
+            candles_data = self.info.candles_snapshot(symbol, interval, start_time, end_time)
+            
+            # Si no hay datos, devuelve None
+            if not candles_data or len(candles_data) == 0:
+                print(f"No hay datos OHLCV disponibles para {symbol}")
+                return None
+                
+            # Reformatea la respuesta para mantener la compatibilidad con tu código existente
+            formatted_candles = []
+            for candle in candles_data:
+                formatted_candle = {
+                    'timestamp': candle['t'],
+                    'open': float(candle['o']),
+                    'high': float(candle['h']), 
+                    'low': float(candle['l']), 
+                    'close': float(candle['c']),
+                    'volume': float(candle['v'])
+                }
+                formatted_candles.append(formatted_candle)
+            
+            return formatted_candles
+            
+        except Exception as e:
+            print(f"Error al obtener datos OHLCV para {symbol}: {str(e)}")
+            return None
 
     def get_order_book(self, symbol):
         """
@@ -84,24 +94,28 @@ class HyperliquidClient:
         Returns:
             dict: Libro de órdenes con bids y asks
         """
-        l2_snapshot = self.info.l2_snapshot(symbol)
-        
-        # Reformatear la respuesta para mantener compatibilidad
-        order_book = {
-            'bids': [],
-            'asks': []
-        }
-        
-        # Los niveles[0] son asks (ventas), niveles[1] son bids (compras)
-        if len(l2_snapshot["levels"]) > 0 and l2_snapshot["levels"][0]:
-            for order in l2_snapshot["levels"][0]:
-                order_book['asks'].append([order['px'], order['sz']])
-                
-        if len(l2_snapshot["levels"]) > 1 and l2_snapshot["levels"][1]:
-            for order in l2_snapshot["levels"][1]:
-                order_book['bids'].append([order['px'], order['sz']])
-        
-        return order_book
+        try:
+            l2_snapshot = self.info.l2_snapshot(symbol)
+            
+            # Reformatear la respuesta para mantener compatibilidad
+            order_book = {
+                'bids': [],
+                'asks': []
+            }
+            
+            # Los niveles[0] son asks (ventas), niveles[1] son bids (compras)
+            if len(l2_snapshot["levels"]) > 0 and l2_snapshot["levels"][0]:
+                for order in l2_snapshot["levels"][0]:
+                    order_book['asks'].append([order['px'], order['sz']])
+                    
+            if len(l2_snapshot["levels"]) > 1 and l2_snapshot["levels"][1]:
+                for order in l2_snapshot["levels"][1]:
+                    order_book['bids'].append([order['px'], order['sz']])
+            
+            return order_book
+        except Exception as e:
+            print(f"Error al obtener order book para {symbol}: {str(e)}")
+            return {'bids': [], 'asks': []}
 
     def get_price(self, symbol):
         """
@@ -113,13 +127,17 @@ class HyperliquidClient:
         Returns:
             dict: Mejor bid, ask y precio medio
         """
-        order_book = self.get_order_book(symbol)
-        
-        best_ask = float(order_book['asks'][0][0]) if order_book['asks'] else None
-        best_bid = float(order_book['bids'][0][0]) if order_book['bids'] else None
-        mid = (best_ask + best_bid) / 2 if best_ask and best_bid else None
-        
-        return {"best_bid": best_bid, "best_ask": best_ask, "mid": mid}
+        try:
+            order_book = self.get_order_book(symbol)
+            
+            best_ask = float(order_book['asks'][0][0]) if order_book['asks'] else None
+            best_bid = float(order_book['bids'][0][0]) if order_book['bids'] else None
+            mid = (best_ask + best_bid) / 2 if best_ask and best_bid else None
+            
+            return {"best_bid": best_bid, "best_ask": best_ask, "mid": mid}
+        except Exception as e:
+            print(f"Error al obtener precio para {symbol}: {str(e)}")
+            return {"best_bid": None, "best_ask": None, "mid": None}
 
     def create_order(self, symbol, side, size):
         """
