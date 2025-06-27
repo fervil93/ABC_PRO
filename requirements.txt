@@ -1,6 +1,5 @@
-hyperliquid>=0.4.5
+hyperliquid-python-sdk
 pandas
 numpy
 requests
 python-telegram-bot
-eth-account
