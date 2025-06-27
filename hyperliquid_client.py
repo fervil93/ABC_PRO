@@ -1,10 +1,10 @@
-import hyperliquid
+from hyperliquid import Client
 from secret import WALLET_ADDRESS, WALLET_PRIVATE_KEY
 from config import API_URL
 
 class HyperliquidClient:
     def __init__(self):
-        self.client = hyperliquid.API(
+        self.client = Client(
             base_url=API_URL,
             wallet_address=WALLET_ADDRESS,
             wallet_private_key=WALLET_PRIVATE_KEY
@@ -14,13 +14,11 @@ class HyperliquidClient:
         return self.client.account_state()
 
     def get_ohlcv(self, symbol, interval, limit):
-        # El SDK usa pares tipo "BTCUSDT"
-        df = self.client.candles(
+        return self.client.candles(
             symbol=symbol + "USDT",
             interval=interval,
             limit=limit
         )
-        return df
 
     def get_order_book(self, symbol):
         return self.client.orderbook(symbol + "USDT")
@@ -30,7 +28,6 @@ class HyperliquidClient:
         return {'price': ticker['last']}
 
     def create_order(self, symbol, side, size):
-        # side: 'buy' o 'sell'
         return self.client.market_order(
             symbol=symbol + "USDT",
             side=side,
