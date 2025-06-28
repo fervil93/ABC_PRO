@@ -933,66 +933,6 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     
     return False
 
-def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
-    """
-    Evalúa si una posición debe cerrarse manualmente (como respaldo si el TP del exchange falla)
-    """
-    try:
-        entryPrice = float(pos['entryPrice'])
-        positionAmt = float(pos['position'])
-        qty = abs(positionAmt)
-        symbol = pos['asset']
-        direccion = "BUY" if positionAmt > 0 else "SELL"
-
-        # Verificar si hay un TP establecido en el archivo
-        niveles = niveles_atr.get(symbol)
-        if niveles and "tp_fijo" in niveles:
-            tp = niveles["tp_fijo"]
-        else:
-            # Si no hay TP guardado, no hay criterio para cerrar manualmente
-            return False
-
-        # Verificar si el precio ha alcanzado el TP y cerrar manualmente (respaldo)
-        if (direccion == "BUY" and precio_actual >= tp) or (direccion == "SELL" and precio_actual <= tp):
-            print(f"[{symbol}] TP alcanzado, intentando cerrar posición. Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
-            order, cierre_confirmado = cerrar_posicion(symbol, positionAmt)
-            
-            if order:
-                if not cierre_confirmado:
-                    print(f"[{symbol}] ⚠️ ADVERTENCIA: Se envió orden de cierre pero la posición sigue abierta")
-                    enviar_telegram(f"⚠️ ADVERTENCIA: Se envió orden de cierre para {symbol} pero la posición sigue abierta. Verifique manualmente.", tipo="warning")
-                    # No enviar notificación de cierre ni limpiar niveles hasta confirmar el cierre real
-                    return False
-                    
-                # Si llegamos aquí, el cierre está confirmado
-                pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
-                icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
-                pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
-                enviar_telegram(
-                    f"{icono_cerrado} Trade CERRADO (respaldo): {symbol} {direccion}\n"
-                    f"Entry: {entryPrice:.4f}\n"
-                    f"Close: {precio_actual:.4f}\n"
-                    f"TP: {tp:.4f}\n"
-                    f"{pnl_texto}",
-                    tipo="close"
-                )
-                resumen_diario["trades_cerrados"] += 1
-                resumen_diario["pnl_total"] += pnl_estimado
-                
-                # Eliminar el TP del archivo
-                if symbol in niveles_atr:
-                    del niveles_atr[symbol]
-                    guardar_niveles_atr(niveles_atr)
-                
-                return True
-                
-    except Exception as e:
-        print(f"Error en evaluar_cierre_operacion_hyperliquid: {e}")
-        logging.error(f"Error en evaluar_cierre_operacion_hyperliquid: {e}", exc_info=True)
-        enviar_telegram(f"⚠️ Error en evaluar_cierre_operacion_hyperliquid: {e}", tipo="error")
-    
-    return False
-
 def obtener_precio_hyperliquid(symbol):
     try:
         ticker = retry_api_call(client.get_price, symbol=symbol)
