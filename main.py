@@ -721,6 +721,7 @@ def verificar_ordenes_tp_pendientes():
 def verificar_posicion_cerrada(symbol):
     """
     Verifica si una posición específica ha sido cerrada
+    Con verificación mejorada y múltiples intentos
     
     Args:
         symbol (str): Símbolo del par a verificar
@@ -728,27 +729,59 @@ def verificar_posicion_cerrada(symbol):
     Returns:
         bool: True si la posición está cerrada (no existe), False si sigue abierta
     """
-    try:
-        # Obtener todas las posiciones actuales
-        posiciones = obtener_posiciones_hyperliquid()
-        
-        # Verificar si el símbolo aparece en alguna posición
-        for pos in posiciones:
-            if pos.get('asset', '').upper() == symbol.upper():
-                # Si el símbolo aparece, la posición sigue abierta
-                return False
-        
-        # Si llegamos aquí, no se encontró el símbolo en ninguna posición, está cerrada
-        return True
-    except Exception as e:
-        print(f"Error verificando si la posición está cerrada para {symbol}: {e}")
-        logging.error(f"Error verificando si la posición está cerrada para {symbol}: {e}", exc_info=True)
-        # En caso de error, asumimos que no podemos confirmar que esté cerrada
-        return False
+    # Hacer múltiples intentos para verificar si la posición se cerró
+    for intento in range(1, 4):  # 3 intentos
+        try:
+            # Obtener el account actualizado directamente (no usar caché)
+            account = client.get_account()
+            
+            if not account or "assetPositions" not in account:
+                print(f"[{symbol}] No se encontraron posiciones en intento {intento}")
+                # Si no hay posiciones, consideramos que está cerrada
+                return True
+            
+            # Buscar el símbolo específico
+            for item in account["assetPositions"]:
+                p = item['position'] if 'position' in item else item
+                
+                # Extraer el símbolo
+                item_symbol = ""
+                for key in ['coin', 'asset', 'symbol']:
+                    if key in p:
+                        item_symbol = p[key]
+                        break
+                
+                # Si encontramos el símbolo y tiene una posición no cero
+                if item_symbol.upper() == symbol.upper():
+                    # Verificar si la posición tiene tamaño
+                    if 'szi' in p:
+                        position_float = float(p['szi'])
+                        if abs(position_float) > 0.0001:
+                            print(f"[{symbol}] Posición sigue abierta en intento {intento}: {position_float}")
+                            # La posición sigue abierta
+                            if intento < 3:
+                                time.sleep(2)  # Esperar 2 segundos entre intentos
+                                continue
+                            return False
+            
+            # Si llegamos aquí, no se encontró el símbolo o tiene posición cero
+            print(f"[{symbol}] Posición verificada como cerrada en intento {intento}")
+            return True
+        except Exception as e:
+            print(f"[{symbol}] Error verificando si la posición está cerrada en intento {intento}: {e}")
+            if intento < 3:
+                time.sleep(2)
+                continue
+            # En caso de error persistente, no confirmar cierre por seguridad
+            return False
+    
+    # Si llegamos aquí tras todos los intentos, no confirmar cierre por seguridad
+    return False
 
 def cerrar_posicion(symbol, positionAmt):
     """
     Cierra una posición usando parámetros compatibles con la API de Hyperliquid
+    Con verificación mejorada y manejo de errores
     """
     try:
         # Primero cancelar órdenes TP pendientes
@@ -768,13 +801,26 @@ def cerrar_posicion(symbol, positionAmt):
         quantity = abs(position_float)
         
         # Para cerrar posición necesitamos hacer lo opuesto
-        # Si positionAmt es positivo (LONG), entonces necesitamos SELL (side="sell")
-        # Si positionAmt es negativo (SHORT), entonces necesitamos BUY (side="buy")
         side = "sell" if position_float > 0 else "buy"
         
         print(f"[{symbol}] Cerrando posición: {side.upper()} {quantity} (posición original: {position_float})")
         
-        # MÉTODO 1: Usar create_order simple sin reduce_only
+        # Registrar orden original para diagnóstico
+        posicion_original = {
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Guardar información de intento de cierre para diagnóstico
+        try:
+            with open("cierres_posiciones.log", "a") as f:
+                f.write(f"{datetime.now().isoformat()} - Intento cierre: {symbol} {side} {quantity}\n")
+        except:
+            pass
+            
+        # MÉTODO 1: Usar create_order simple 
         try:
             order = client.create_order(
                 symbol=symbol,
@@ -785,8 +831,24 @@ def cerrar_posicion(symbol, positionAmt):
             
             if order and "status" in order:
                 print(f"[{symbol}] Orden de cierre enviada exitosamente: {order}")
-                time.sleep(2)  # Esperar para que se procese la orden
-                return order, True
+                
+                # Verificar después de un tiempo que la posición realmente se cerró
+                time.sleep(3)  # Esperar 3 segundos para asegurar que se procesa
+                
+                cierre_confirmado = False
+                for intento in range(1, 4):  # 3 intentos
+                    cierre_confirmado = verificar_posicion_cerrada(symbol)
+                    if cierre_confirmado:
+                        break
+                    time.sleep(2)  # Esperar entre intentos
+                
+                if not cierre_confirmado:
+                    print(f"[{symbol}] ❌ ALERTA: Orden de cierre aceptada pero la posición sigue abierta")
+                    enviar_telegram(f"⚠️ ALERTA CRÍTICA: La posición {symbol} {side} {quantity} permanece abierta después del cierre. REQUIERE REVISIÓN MANUAL.", tipo="error")
+                    return order, False
+                else:
+                    print(f"[{symbol}] ✅ Posición cerrada exitosamente")
+                    return order, True
         except Exception as e1:
             print(f"[{symbol}] Error en método 1: {e1}")
             
@@ -797,20 +859,100 @@ def cerrar_posicion(symbol, positionAmt):
             
             if order and "status" in order:
                 print(f"[{symbol}] Orden de cierre enviada (método 2): {order}")
-                time.sleep(2)
-                return order, True
+                
+                # Verificar que se haya cerrado
+                time.sleep(3)
+                cierre_confirmado = False
+                for intento in range(1, 4):
+                    cierre_confirmado = verificar_posicion_cerrada(symbol)
+                    if cierre_confirmado:
+                        break
+                    time.sleep(2)
+                
+                if not cierre_confirmado:
+                    print(f"[{symbol}] ❌ ALERTA: Orden de cierre (método 2) aceptada pero posición sigue abierta")
+                    enviar_telegram(f"⚠️ ALERTA CRÍTICA: La posición {symbol} {side} {quantity} permanece abierta después del cierre (método 2). REQUIERE REVISIÓN MANUAL.", tipo="error")
+                    return order, False
+                else:
+                    print(f"[{symbol}] ✅ Posición cerrada exitosamente (método 2)")
+                    return order, True
         except Exception as e2:
             print(f"[{symbol}] Error en método 2: {e2}")
         
         # Si llegamos aquí, todos los métodos fallaron
-        print(f"[{symbol}] ❌ No se pudo cerrar la posición tras múltiples intentos")
-        enviar_telegram(f"⚠️ No se pudo cerrar la posición para {symbol} tras múltiples intentos. Cierre manualmente.", tipo="error")
+        enviar_telegram(f"⚠️ ALERTA CRÍTICA: No se pudo cerrar la posición {symbol} {side} {quantity}. REQUIERE CIERRE MANUAL.", tipo="error")
         return None, False
             
     except Exception as e:
         logging.error(f"Error al cerrar posición para {symbol}: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al cerrar posición para {symbol}: {e}", tipo="error")
         return None, False
+
+def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
+    """
+    Evalúa si una posición debe cerrarse manualmente (como respaldo si el TP del exchange falla)
+    Con mejor manejo de errores y verificación
+    """
+    try:
+        entryPrice = float(pos['entryPrice'])
+        positionAmt = float(pos['position'])
+        qty = abs(positionAmt)
+        symbol = pos['asset']
+        direccion = "BUY" if positionAmt > 0 else "SELL"
+
+        # Verificar si hay un TP establecido en el archivo
+        niveles = niveles_atr.get(symbol)
+        if niveles and "tp_fijo" in niveles:
+            tp = niveles["tp_fijo"]
+        else:
+            # Si no hay TP guardado, no hay criterio para cerrar manualmente
+            return False
+
+        # Verificar si el precio ha alcanzado el TP y cerrar manualmente (respaldo)
+        if (direccion == "BUY" and precio_actual >= tp) or (direccion == "SELL" and precio_actual <= tp):
+            print(f"[{symbol}] TP alcanzado, intentando cerrar posición. Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
+            
+            # No eliminar el TP hasta confirmar cierre exitoso
+            order, cierre_confirmado = cerrar_posicion(symbol, positionAmt)
+            
+            if order:
+                if not cierre_confirmado:
+                    print(f"[{symbol}] ⚠️ ADVERTENCIA CRÍTICA: Se envió orden de cierre pero la posición sigue abierta")
+                    enviar_telegram(f"⚠️ ADVERTENCIA CRÍTICA: Se envió orden de cierre para {symbol} pero la posición sigue abierta. VERIFIQUE Y CIERRE MANUALMENTE.", tipo="error")
+                    
+                    # NO REGISTRAR COMO CERRADA para que el bot siga intentando cerrarla
+                    return False
+                    
+                # Si llegamos aquí, el cierre está confirmado
+                pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
+                icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
+                pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
+                
+                # Solo eliminar el TP y enviar confirmación si se cerró realmente
+                enviar_telegram(
+                    f"{icono_cerrado} Trade CERRADO (respaldo): {symbol} {direccion}\n"
+                    f"Entry: {entryPrice:.4f}\n"
+                    f"Close: {precio_actual:.4f}\n"
+                    f"TP: {tp:.4f}\n"
+                    f"{pnl_texto}",
+                    tipo="close"
+                )
+                resumen_diario["trades_cerrados"] += 1
+                resumen_diario["pnl_total"] += pnl_estimado
+                
+                # Eliminar el TP del archivo SOLO SI el cierre está confirmado
+                if symbol in niveles_atr:
+                    del niveles_atr[symbol]
+                    guardar_niveles_atr(niveles_atr)
+                
+                return True
+                
+    except Exception as e:
+        print(f"Error en evaluar_cierre_operacion_hyperliquid: {e}")
+        logging.error(f"Error en evaluar_cierre_operacion_hyperliquid: {e}", exc_info=True)
+        enviar_telegram(f"⚠️ Error en evaluar_cierre_operacion_hyperliquid: {e}", tipo="error")
+    
+    return False
 
 def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     """
