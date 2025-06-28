@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS mejorados con texto centrado
+# Estilos CSS mejorados con texto centrado y títulos consistentes
 st.markdown("""
 <style>
     /* Estilos generales y centrado */
@@ -30,8 +30,23 @@ st.markdown("""
         text-align: center !important;
     }
     
-    /* Centrar encabezados */
-    h1, h2, h3, h4, h5, h6, p {
+    /* Tamaños de título consistentes */
+    h1, h2, h3, h4, h5, h6 {
+        text-align: center !important;
+        font-size: 1.1rem !important;
+        margin-top: 1rem !important;
+        margin-bottom: 0.5rem !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Título principal un poco más grande */
+    h1 {
+        font-size: 1.3rem !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Párrafos centrados */
+    p {
         text-align: center !important;
     }
     
@@ -39,11 +54,6 @@ st.markdown("""
     .stAlert {
         text-align: center !important;
     }
-    
-    /* Tamaños de texto */
-    h1 {font-size: 1.5rem; margin-bottom: 0.5rem;}
-    h2 {font-size: 1.3rem; margin-bottom: 0.8rem;}
-    h3 {font-size: 1.1rem; margin-top: 1rem; margin-bottom: 0.5rem;}
     
     /* Tabla más profesional y centrada */
     .dataframe {
@@ -158,6 +168,11 @@ st.markdown("""
         color: #6c757d;
         margin-top: 20px;
     }
+    
+    /* Hacer que la barra de recarga sea menos visible */
+    .stProgress > div > div {
+        background-color: #f8f9fa !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -172,6 +187,10 @@ client = get_client()
 if 'mensaje' not in st.session_state:
     st.session_state.mensaje = None
     st.session_state.tipo_mensaje = None
+    st.session_state.ultima_actualizacion = datetime.now()
+
+# Configuración de auto-refresh (5 segundos)
+AUTO_REFRESH_SECONDS = 5
 
 # Función para cargar configuración
 def cargar_configuracion():
@@ -277,7 +296,14 @@ def cerrar_posicion(symbol, position_amount):
         return False, f"Error: {e}"
 
 # Encabezado
-st.markdown("<h1 style='text-align: center;'>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
+st.markdown("<h1>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
+
+# Mostrar el tiempo de la última actualización
+ultima_act = st.session_state.ultima_actualizacion.strftime("%H:%M:%S")
+st.markdown(f"<p class='refresh-note'>Última actualización: {ultima_act}</p>", unsafe_allow_html=True)
+
+# Crear barra de progreso para el refresh
+progress_bar = st.progress(0)
 
 # Obtener datos de Hyperliquid
 datos = obtener_datos_hyperliquid()
@@ -330,8 +356,8 @@ if st.session_state.mensaje:
     st.session_state.mensaje = None
     st.session_state.tipo_mensaje = None
 
-# Posiciones abiertas
-st.markdown("<h2 style='text-align: center;'>Posiciones Abiertas</h2>", unsafe_allow_html=True)
+# Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
+st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
 
 if not posiciones:
     st.info("🧙‍♂️ No hay operaciones abiertas.")
@@ -363,8 +389,8 @@ else:
     # Mostrar tabla
     st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
     
-    # Botones para cerrar posiciones
-    st.markdown("<h3 style='text-align: center;'>Cerrar posiciones</h3>", unsafe_allow_html=True)
+    # Botones para cerrar posiciones - Ahora con h3 consistente
+    st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
     
     # Crear dos columnas para mostrar botones en filas de a pares
     num_columns = 2
@@ -381,8 +407,8 @@ else:
                     time.sleep(1)  # Pequeña pausa
                     st.rerun()  # Correcto en versiones recientes de Streamlit
 
-# Pares disponibles (simple)
-st.markdown("<h3 style='text-align: center;'>Pares Disponibles</h3>", unsafe_allow_html=True)
+# Pares disponibles (simple) - Ahora con h3 consistente
+st.markdown("<h3>Pares Disponibles</h3>", unsafe_allow_html=True)
 simbolos = []
 try:
     if os.path.exists("simbolos_disponibles.txt"):
@@ -398,17 +424,16 @@ else:
     st.info("No hay pares disponibles.")
 
 # Mostrar mensaje de actualización
-st.markdown('<p class="refresh-note">Actualizando automáticamente cada 5 segundos...</p>', unsafe_allow_html=True)
+st.markdown(f'<p class="refresh-note">Actualizando automáticamente cada {AUTO_REFRESH_SECONDS} segundos...</p>', unsafe_allow_html=True)
 
-# Auto-actualización (cada 5 segundos)
-st.markdown(
-    """
-    <script>
-        function updatePage() {
-            window.location.reload();
-        }
-        setTimeout(updatePage, 5000); // 5000 ms = 5 segundos
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+# Actualizar la página automáticamente usando método nativo de Streamlit
+# En lugar de usar JavaScript, usamos un bucle con time.sleep
+for i in range(AUTO_REFRESH_SECONDS * 10):
+    # Actualizar barra de progreso
+    progress_percent = i / (AUTO_REFRESH_SECONDS * 10)
+    progress_bar.progress(progress_percent)
+    time.sleep(0.1)
+
+# Una vez completada la barra, actualizar la página
+st.session_state.ultima_actualizacion = datetime.now()
+st.rerun()
