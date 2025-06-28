@@ -74,6 +74,7 @@ PRECISION_POR_SIMBOLO = {
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
 TP_ORDERS_FILE = "tp_orders.json"
+PNL_HISTORY_FILE = "historial_pnl.json"  # Nuevo archivo para historial de PnL real
 COOLDOWN_MINUTES = 5  # Reducido de 15 a 5 minutos
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
@@ -228,6 +229,36 @@ def guardar_ordenes_tp(data):
 
 def ajustar_precision(valor, precision):
     return float(f"{valor:.{precision}f}") if precision > 0 else float(int(valor))
+
+# Función nueva para guardar historial de PnL real
+def guardar_historial_pnl(symbol, direccion, entry_price, exit_price, tp_price, pnl_real):
+    """Guarda el historial de PnL para análisis posterior"""
+    try:
+        # Cargar historial existente o crear uno nuevo
+        historial = []
+        
+        if os.path.exists(PNL_HISTORY_FILE):
+            with open(PNL_HISTORY_FILE, "r") as f:
+                historial = json.load(f)
+        
+        # Agregar nuevo registro
+        historial.append({
+            "symbol": symbol,
+            "direccion": direccion,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "tp_price": tp_price,
+            "pnl_real": pnl_real,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Guardar historial actualizado
+        with open(PNL_HISTORY_FILE, "w") as f:
+            json.dump(historial, f, indent=2)
+            
+    except Exception as e:
+        print(f"Error al guardar historial de PnL: {e}")
+        logging.error(f"Error al guardar historial de PnL: {e}", exc_info=True)
 
 def obtener_posiciones_hyperliquid():
     """
@@ -761,6 +792,18 @@ def cerrar_posicion(symbol, positionAmt):
     Con verificación mejorada y manejo de errores
     """
     try:
+        # Primero, guardar el PnL real antes de intentar cerrar
+        pnl_real = None
+        try:
+            posiciones = obtener_posiciones_hyperliquid()
+            for pos in posiciones:
+                if pos.get('asset', '').upper() == symbol.upper():
+                    pnl_real = float(pos.get('unrealizedPnl', 0))
+                    print(f"[{symbol}] PnL real capturado antes del cierre: {pnl_real}")
+                    break
+        except Exception as e:
+            print(f"[{symbol}] Error obteniendo PnL real: {e}")
+        
         # Primero cancelar órdenes TP pendientes
         tp_orders = cargar_ordenes_tp()
         
@@ -801,7 +844,10 @@ def cerrar_posicion(symbol, positionAmt):
                 # Verificar si realmente se cerró
                 if verificar_posicion_cerrada(symbol):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 1)")
-                    return order, True
+                    if pnl_real is not None:
+                        return order, True, pnl_real
+                    else:
+                        return order, True
                 else:
                     print(f"[{symbol}] Posición sigue abierta en intento 1: {quantity}")
         except Exception as e1:
@@ -819,7 +865,10 @@ def cerrar_posicion(symbol, positionAmt):
                 # Verificar si realmente se cerró
                 if verificar_posicion_cerrada(symbol):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 2)")
-                    return order, True
+                    if pnl_real is not None:
+                        return order, True, pnl_real
+                    else:
+                        return order, True
                 else:
                     print(f"[{symbol}] Posición sigue abierta después de método 2")
         except Exception as e2:
@@ -853,14 +902,21 @@ def cerrar_posicion(symbol, positionAmt):
             # Verificar si se cerró finalmente
             if verificar_posicion_cerrada(symbol):
                 print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 3 - lotes)")
-                return {"status": "ok", "method": "batch_close"}, True
+                order_info = {"status": "ok", "method": "batch_close"}
+                if pnl_real is not None:
+                    return order_info, True, pnl_real
+                else:
+                    return order_info, True
         except Exception as e3:
             print(f"[{symbol}] Error en método 3: {e3}")
         
         # Si llegamos aquí, todos los métodos fallaron
         print(f"[{symbol}] ❌ No se pudo cerrar la posición tras múltiples intentos")
         enviar_telegram(f"⚠️ No se pudo cerrar la posición para {symbol} tras múltiples intentos. Cierre manualmente.", tipo="error")
-        return None, False
+        if pnl_real is not None:
+            return None, False, pnl_real
+        else:
+            return None, False
             
     except Exception as e:
         logging.error(f"Error al cerrar posición para {symbol}: {e}", exc_info=True)
@@ -870,7 +926,7 @@ def cerrar_posicion(symbol, positionAmt):
 def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     """
     Evalúa si una posición debe cerrarse manualmente (como respaldo si el TP del exchange falla)
-    Con mejor manejo de errores y verificación
+    Con mejor manejo de errores y verificación, además de PnL real
     """
     try:
         entryPrice = float(pos['entryPrice'])
@@ -878,6 +934,9 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
         qty = abs(positionAmt)
         symbol = pos['asset']
         direccion = "BUY" if positionAmt > 0 else "SELL"
+        
+        # Obtener el PnL real de la posición antes del cierre
+        pnl_real = float(pos.get('unrealizedPnl', 0))
 
         # Verificar si hay un TP establecido en el archivo
         niveles = niveles_atr.get(symbol)
@@ -892,7 +951,14 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
             print(f"[{symbol}] TP alcanzado, intentando cerrar posición. Entry: {entryPrice}, Actual: {precio_actual}, TP: {tp}")
             
             # No eliminar el TP hasta confirmar cierre exitoso
-            order, cierre_confirmado = cerrar_posicion(symbol, positionAmt)
+            resultado_cierre = cerrar_posicion(symbol, positionAmt)
+            
+            # Verificar si tenemos 2 o 3 elementos en la respuesta
+            if len(resultado_cierre) == 3:
+                order, cierre_confirmado, pnl_real_final = resultado_cierre
+            else:
+                order, cierre_confirmado = resultado_cierre
+                pnl_real_final = pnl_real  # Usar el PnL obtenido antes del cierre
             
             if order:
                 if not cierre_confirmado:
@@ -901,23 +967,26 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                     
                     # NO REGISTRAR COMO CERRADA para que el bot siga intentando cerrarla
                     return False
-                    
-                # Si llegamos aquí, el cierre está confirmado
-                pnl_estimado = ((precio_actual - entryPrice) * positionAmt) if direccion == "BUY" else ((entryPrice - precio_actual) * abs(positionAmt))
-                icono_cerrado = "🟢" if pnl_estimado >= 0 else "🔴"
-                pnl_texto = f"PnL estimado: {pnl_estimado:.4f}"
                 
-                # Solo eliminar el TP y enviar confirmación si se cerró realmente
+                # Si llegamos aquí, el cierre está confirmado
+                icono_cerrado = "🟢" if pnl_real_final >= 0 else "🔴"
+                
+                # Usar el PnL real obtenido de la API
                 enviar_telegram(
                     f"{icono_cerrado} Trade CERRADO (respaldo): {symbol} {direccion}\n"
                     f"Entry: {entryPrice:.4f}\n"
                     f"Close: {precio_actual:.4f}\n"
                     f"TP: {tp:.4f}\n"
-                    f"{pnl_texto}",
+                    f"PnL real: {pnl_real_final:.4f} USDT",
                     tipo="close"
                 )
+                
+                # Guardar el historial para análisis posterior
+                guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, tp, pnl_real_final)
+                
+                # Actualizar resumen diario
                 resumen_diario["trades_cerrados"] += 1
-                resumen_diario["pnl_total"] += pnl_estimado
+                resumen_diario["pnl_total"] += pnl_real_final
                 
                 # Eliminar el TP del archivo SOLO SI el cierre está confirmado
                 if symbol in niveles_atr:
@@ -1015,7 +1084,14 @@ def cerrar_posiciones_huerfanas():
                 # Por seguridad, solo cerramos posiciones huérfanas con PnL positivo
                 if unrealizedPnl > 0:
                     print(f"[{symbol}] Cerrando posición huérfana con PnL positivo: {unrealizedPnl}")
-                    order, cierre_confirmado = cerrar_posicion(symbol, positionAmt)
+                    resultado_cierre = cerrar_posicion(symbol, positionAmt)
+                    
+                    # Verificar si tenemos el PnL real en la respuesta
+                    if len(resultado_cierre) == 3:
+                        order, cierre_confirmado, pnl_real_final = resultado_cierre
+                    else:
+                        order, cierre_confirmado = resultado_cierre
+                        pnl_real_final = unrealizedPnl  # Usar el PnL obtenido antes del cierre
                     
                     if order and cierre_confirmado:
                         precio_actual = obtener_precio_hyperliquid(symbol)
@@ -1023,11 +1099,15 @@ def cerrar_posiciones_huerfanas():
                             precio_actual = entryPrice  # Fallback
                         
                         direccion = "BUY" if positionAmt > 0 else "SELL"
+                        
+                        # Guardar el historial para análisis posterior
+                        guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, None, pnl_real_final)
+                        
                         enviar_telegram(
                             f"🟡 Trade HUÉRFANO CERRADO: {symbol} {direccion}\n"
                             f"Entry: {entryPrice:.4f}\n"
                             f"Close: {precio_actual:.4f}\n"
-                            f"PnL: {unrealizedPnl:.4f}",
+                            f"PnL real: {pnl_real_final:.4f} USDT",
                             tipo="close"
                         )
                 else:
@@ -1129,70 +1209,4 @@ if __name__ == "__main__":
             
             # --- Espera cooldown tras un trade abierto ---
             if last_trade_time and (now - last_trade_time) < timedelta(minutes=COOLDOWN_MINUTES):
-                restante = timedelta(minutes=COOLDOWN_MINUTES) - (now - last_trade_time)
-                print(f"En cooldown tras última apertura. Esperando {restante} antes de poder abrir otro trade.")
-                time.sleep(intervalo_segundos)
-                continue
-
-            # --- Solo se permite una apertura nueva por ciclo ---
-            apertura_realizada = False
-            for simbolo in simbolos:
-                # Usar la nueva función para verificar posiciones existentes
-                ya_abierta = verificar_posicion_existente(simbolo, posiciones)
-                if ya_abierta:
-                    print(f"Ya existe una posición abierta para {simbolo}. Se omite.")
-                    continue
-                
-                if apertura_realizada:
-                    continue
-
-                print(f"\nEvaluando condiciones microestructura para {simbolo}...")
-                datos = obtener_datos_historicos(simbolo)
-                if datos is None:
-                    continue
-
-                precio_actual = obtener_precio_hyperliquid(simbolo)
-                if precio_actual is None:
-                    continue
-
-                # --- Detección de alta volatilidad ---
-                if detectar_volatilidad_extrema(datos):
-                    msg = f"🚨 Alta volatilidad detectada en {simbolo}: se suspende apertura de trades en este ciclo."
-                    print(msg)
-                    continue
-
-                # --- Filtro de spread ---
-                if not spread_aceptable(simbolo):
-                    print(f"[{simbolo}] Spread no aceptable. Se descarta trade.")
-                    continue
-
-                accion, razon, atr, entry_price = aplicar_condiciones_microestructura_v2(datos, precio_actual, simbolo)
-
-                if accion and atr is not None:
-                    if abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
-                        resumen_diario["trades_abiertos"] += 1
-                        apertura_realizada = True
-                        last_trade_time = datetime.now()
-                        break
-                else:
-                    print(f"[{simbolo}] No se abre trade. Razón: {razon}")
-
-            # Envío resumen diario si corresponde
-            if resumen_diario["ultimo_envio"] != datetime.now().date():
-                enviar_telegram(
-                    f"📊 Resumen diario:\n"
-                    f"Trades abiertos: {resumen_diario['trades_abiertos']}\n"
-                    f"Trades cerrados: {resumen_diario['trades_cerrados']}\n"
-                    f"PnL estimado: {resumen_diario['pnl_total']:.4f} USDT",
-                    tipo="daily"
-                )
-                resumen_diario["trades_abiertos"] = 0
-                resumen_diario["trades_cerrados"] = 0
-                resumen_diario["pnl_total"] = 0.0
-                resumen_diario["ultimo_envio"] = datetime.now().date()
-
-            print(f"\nEsperando {intervalo_segundos} segundos antes de la próxima evaluación...")
-            time.sleep(intervalo_segundos)
-    except Exception as e:
-        logging.error(f"Error crítico en el bucle principal: {e}", exc_info=True)
-        enviar_telegram(f"❗️ Error crítico en el bucle principal: {e}", tipo="error")
+                restante = timedelta(minutes=COOL
