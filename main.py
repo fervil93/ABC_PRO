@@ -1004,14 +1004,12 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                 # Guardar el historial para análisis posterior
                 guardar_historial_pnl(
                     symbol, direccion, 
-                    entry_price or 0, 
+                    entryPrice,           # En vez de entry_price
                     precio_actual, 
-                    tp_price, 
-                    pnl_real or 0, 
-                    tiempo_abierto,
-                    "tp_alcanzado" if tp_price and ((direccion == "long" and precio_actual >= tp_price) or 
-                                                   (direccion == "short" and precio_actual <= tp_price)) 
-                                  else "manual"
+                    tp,                   # En vez de tp_price
+                    pnl_real_final,       # En vez de pnl_real
+                    None,                 # tiempo_abierto no está definido en esta función
+                    "tp_alcanzado"
                 )
                 # Actualizar resumen diario
                 resumen_diario["trades_cerrados"] += 1
@@ -1130,8 +1128,8 @@ def cerrar_posiciones_huerfanas():
                         direccion = "BUY" if positionAmt > 0 else "SELL"
                         
                         # Guardar el historial para análisis posterior
-                        guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, None, pnl_real_final)
-                        
+                        guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, None, pnl_real_final, None, "huerfana")
+
                         enviar_telegram(
                             f"🟡 Trade HUÉRFANO CERRADO: {symbol} {direccion}\n"
                             f"Entry: {entryPrice:.4f}\n"
