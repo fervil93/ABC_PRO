@@ -152,30 +152,29 @@ st.markdown("""
         border-left: 5px solid #dc3545;
     }
     
-    /* Botones más pequeños y en línea */
-    .close-buttons-row {
+    /* Botones de cierre inline */
+    .close-buttons-container {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 5px;
         justify-content: center;
+        margin-top: 10px;
         margin-bottom: 15px;
     }
     
-    /* Hacer que los botones de Streamlit sean más pequeños y aparezcan en línea */
-    .stButton > button {
-        font-size: 0.8rem !important;
-        padding: 0.2rem 0.5rem !important;
-        height: auto !important;
-        min-height: 0 !important;
-        margin: 0 3px !important;
-        flex-shrink: 1;
-        white-space: nowrap;
+    .custom-button {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 5px 10px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        margin: 0 3px;
     }
-    /* Hacer que los botones se muestren en línea */
-    .row-of-buttons .stButton {
-        display: inline-block !important;
-        margin: 0 2px !important;
-        width: auto !important;
+    
+    .custom-button:hover {
+        background-color: #c82333;
     }
     
     /* Nota de actualización */
@@ -238,6 +237,9 @@ st.markdown("""
         background-color: #e9ecef;
         border-bottom: 2px solid #0066cc;
     }
+    
+    /* Ocultar botones de Streamlit originales */
+    div.stButton {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -547,18 +549,6 @@ with tab1:
             # Obtener nivel de TP
             tp_price = niveles_tp.get(symbol, "N/A")
             
-            # Calcular distancia al TP
-            pct_al_tp = "N/A"
-            if tp_price != "N/A" and precio_actual:
-                if pos['direction'] == "LONG":  # LONG
-                    pct_al_tp = (float(tp_price) - precio_actual) / precio_actual * 100
-                else:  # SHORT
-                    pct_al_tp = (precio_actual - float(tp_price)) / precio_actual * 100
-                
-                # Formatear con color según cercanía al TP
-                pct_class = "profit" if pct_al_tp < 0.5 else ""
-                pct_al_tp = f"<span class='{pct_class}'>{pct_al_tp:.2f}%</span>"
-                
             data.append({
                 "Símbolo": symbol,
                 "Dirección": pos['direction'],
@@ -566,7 +556,6 @@ with tab1:
                 "Precio Entrada": f"{pos['entryPrice']:.2f}",
                 "Precio Actual": f"{precio_actual:.2f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.2f}" if tp_price != "N/A" else "N/A",
-                "% al TP": pct_al_tp,
                 "PnL": pnl_formatted,
             })
         
@@ -576,15 +565,11 @@ with tab1:
         # Mostrar tabla
         st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         
-        # Botones para cerrar posiciones - En una sola fila
+        # Botones para cerrar posiciones en una sola fila
         st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
         
-        # Usar columnas para alinear los botones en una fila
-        st.markdown('<div class="row-of-buttons" style="text-align: center;">', unsafe_allow_html=True)
-        
-        # Crear botones en línea
+        # Crear los botones de Streamlit invisibles para manejar la lógica
         for i, pos in enumerate(posiciones):
-            # Crear el botón para cerrar la posición
             if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
                 with st.spinner(f"Cerrando {pos['symbol']}..."):
                     success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
@@ -593,8 +578,20 @@ with tab1:
                     time.sleep(1)
                     st.rerun()
         
-        # Cerrar el div de los botones
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Mostrar botones personalizados en línea
+        buttons_html = '<div class="close-buttons-container">'
+        for i, pos in enumerate(posiciones):
+            btn_id = f"btn_{pos['symbol']}"
+            buttons_html += f"""
+            <button class="custom-button" 
+                    onclick="document.getElementById('{btn_id}').click();">
+                Cerrar {pos['symbol']} ({pos['direction']})
+            </button>
+            """
+        buttons_html += '</div>'
+        
+        # Mostrar los botones HTML
+        st.markdown(buttons_html, unsafe_allow_html=True)
 
 # Tab 2: Estadísticas
 with tab2:
