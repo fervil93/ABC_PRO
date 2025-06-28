@@ -438,7 +438,7 @@ def aplicar_condiciones_microestructura_v2(df, precio_actual, symbol):
     prev_max = df['high'].iloc[-6:-1].max()
     prev_min = df['low'].iloc[-6:-1].min()
 
-    if atr_actual < 0.5 * atr_media_actual:  # Reducido de 0.7 a 0.5
+    if atr_actual < 0.7 * atr_media_actual:
         razon = f"ATR actual ({atr_actual:.6f}) < 0.5*ATR20 media ({0.5*atr_media_actual:.6f})."
         return None, razon, None, None
 
