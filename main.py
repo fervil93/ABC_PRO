@@ -748,15 +748,7 @@ def verificar_posicion_cerrada(symbol):
 
 def cerrar_posicion(symbol, positionAmt):
     """
-    Cierra una posición usando la implementación correcta según la API de Hyperliquid
-    
-    Args:
-        symbol (str): Símbolo del par de trading
-        positionAmt (float): Cantidad de la posición actual
-    
-    Returns:
-        dict: Respuesta de la orden de cierre o None si hay error
-        bool: True si se confirmó el cierre, False en caso contrario
+    Cierra una posición usando parámetros compatibles con la API de Hyperliquid
     """
     try:
         # Primero cancelar órdenes TP pendientes
@@ -775,40 +767,45 @@ def cerrar_posicion(symbol, positionAmt):
         position_float = float(positionAmt)
         quantity = abs(position_float)
         
-        # CORRECCIÓN: Para cerrar posición necesitamos hacer lo opuesto
+        # Para cerrar posición necesitamos hacer lo opuesto
         # Si positionAmt es positivo (LONG), entonces necesitamos SELL (side="sell")
         # Si positionAmt es negativo (SHORT), entonces necesitamos BUY (side="buy")
         side = "sell" if position_float > 0 else "buy"
         
         print(f"[{symbol}] Cerrando posición: {side.upper()} {quantity} (posición original: {position_float})")
         
-        # Usar directamente el método create_order que es más estable
-        order = client.create_order(
-            symbol=symbol,
-            side=side,
-            size=quantity,
-            reduce_only=True  # IMPORTANTE: Esto asegura que solo cierra la posición existente
-        )
+        # MÉTODO 1: Usar create_order simple sin reduce_only
+        try:
+            order = client.create_order(
+                symbol=symbol,
+                side=side,
+                size=quantity,
+                type="market"
+            )
+            
+            if order and "status" in order:
+                print(f"[{symbol}] Orden de cierre enviada exitosamente: {order}")
+                time.sleep(2)  # Esperar para que se procese la orden
+                return order, True
+        except Exception as e1:
+            print(f"[{symbol}] Error en método 1: {e1}")
+            
+        # MÉTODO 2: Intentar con exchange.market_close si está disponible
+        try:
+            is_buy = side.lower() == "buy"
+            order = client.exchange.market_close(symbol, is_buy, quantity)
+            
+            if order and "status" in order:
+                print(f"[{symbol}] Orden de cierre enviada (método 2): {order}")
+                time.sleep(2)
+                return order, True
+        except Exception as e2:
+            print(f"[{symbol}] Error en método 2: {e2}")
         
-        if order and "status" in order:
-            print(f"[{symbol}] Orden de cierre enviada exitosamente: {order}")
-            
-            # Esperar un momento para que la orden se procese
-            time.sleep(2)
-            
-            # Verificar si la posición realmente se cerró
-            cierre_confirmado = verificar_posicion_cerrada(symbol)
-            
-            if not cierre_confirmado:
-                print(f"[{symbol}] ⚠️ ADVERTENCIA: La posición parece seguir abierta después del cierre")
-                # No enviar error a Telegram para evitar spam
-            else:
-                print(f"[{symbol}] ✅ Cierre de posición confirmado")
-                
-            return order, cierre_confirmado
-        else:
-            print(f"[{symbol}] Error al enviar orden de cierre: {order}")
-            return None, False
+        # Si llegamos aquí, todos los métodos fallaron
+        print(f"[{symbol}] ❌ No se pudo cerrar la posición tras múltiples intentos")
+        enviar_telegram(f"⚠️ No se pudo cerrar la posición para {symbol} tras múltiples intentos. Cierre manualmente.", tipo="error")
+        return None, False
             
     except Exception as e:
         logging.error(f"Error al cerrar posición para {symbol}: {e}", exc_info=True)
