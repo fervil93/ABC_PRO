@@ -35,17 +35,17 @@ SPREAD_MAX_PCT_POR_SIMBOLO = {
     "SHIB": 2.0, "UNI": 1.5
 }
 MULTIPLICADOR_VOL_POR_SIMBOLO = {
-    "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 0.8, "XRP": 0.8,
-    "ADA": 0.8, "DOGE": 0.8, "AVAX": 0.8, "LINK": 0.8, "MATIC": 0.8, 
-    "ARB": 0.8, "SUI": 0.8, "PEPE": 0.7, "OP": 0.8, "NEAR": 0.8, 
-    "DOT": 0.8, "ATOM": 0.8, "LTC": 0.8, "SHIB": 0.7, "UNI": 0.8
+    "BTC": 1.5, "ETH": 1.5, "BNB": 1.5, "SOL": 1.2, "XRP": 1.2,     # Aumentado de 1.0/0.8 a 1.5/1.2
+    "ADA": 1.2, "DOGE": 1.2, "AVAX": 1.2, "LINK": 1.2, "MATIC": 1.2, # Aumentado de 0.8 a 1.2
+    "ARB": 1.2, "SUI": 1.2, "PEPE": 1.0, "OP": 1.2, "NEAR": 1.2,    # Aumentado de 0.8/0.7 a 1.2/1.0
+    "DOT": 1.2, "ATOM": 1.2, "LTC": 1.2, "SHIB": 1.0, "UNI": 1.2    # Aumentado de 0.8/0.7 a 1.2/1.0
 }
 BREAKOUT_ATR_MULT_POR_SIMBOLO = {
-    "BTC": 0.1, "ETH": 0.1, "BNB": 0.1, "SOL": 0.05, "XRP": 0.05,
-    "ADA": 0.05, "DOGE": 0.05, "AVAX": 0.05, "LINK": 0.05,
-    "MATIC": 0.05, "ARB": 0.05, "SUI": 0.05, "PEPE": 0.05, "OP": 0.05,
-    "NEAR": 0.05, "DOT": 0.05, "ATOM": 0.05, "LTC": 0.05, "SHIB": 0.05,
-    "UNI": 0.05
+    "BTC": 0.15, "ETH": 0.15, "BNB": 0.15, "SOL": 0.1, "XRP": 0.1,  # Aumentado de 0.1/0.05 a 0.15/0.1
+    "ADA": 0.1, "DOGE": 0.1, "AVAX": 0.1, "LINK": 0.1,              # Aumentado de 0.05 a 0.1
+    "MATIC": 0.1, "ARB": 0.1, "SUI": 0.1, "PEPE": 0.1, "OP": 0.1,   # Aumentado de 0.05 a 0.1
+    "NEAR": 0.1, "DOT": 0.1, "ATOM": 0.1, "LTC": 0.1, "SHIB": 0.1,  # Aumentado de 0.05 a 0.1
+    "UNI": 0.1                                                      # Aumentado de 0.05 a 0.1
 }
 
 # Definir la precisión para cada símbolo según las reglas de Hyperliquid
