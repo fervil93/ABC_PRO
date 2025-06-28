@@ -302,9 +302,6 @@ st.markdown("<h1>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
 ultima_act = st.session_state.ultima_actualizacion.strftime("%H:%M:%S")
 st.markdown(f"<p class='refresh-note'>Última actualización: {ultima_act}</p>", unsafe_allow_html=True)
 
-# Crear barra de progreso para el refresh
-progress_bar = st.progress(0)
-
 # Obtener datos de Hyperliquid
 datos = obtener_datos_hyperliquid()
 saldo = datos['saldo']
@@ -426,14 +423,9 @@ else:
 # Mostrar mensaje de actualización
 st.markdown(f'<p class="refresh-note">Actualizando automáticamente cada {AUTO_REFRESH_SECONDS} segundos...</p>', unsafe_allow_html=True)
 
-# Actualizar la página automáticamente usando método nativo de Streamlit
-# En lugar de usar JavaScript, usamos un bucle con time.sleep
-for i in range(AUTO_REFRESH_SECONDS * 10):
-    # Actualizar barra de progreso
-    progress_percent = i / (AUTO_REFRESH_SECONDS * 10)
-    progress_bar.progress(progress_percent)
-    time.sleep(0.1)
+# Esperar AUTO_REFRESH_SECONDS antes de actualizar
+time.sleep(AUTO_REFRESH_SECONDS)
 
-# Una vez completada la barra, actualizar la página
+# Una vez completado el tiempo, actualizar la página
 st.session_state.ultima_actualizacion = datetime.now()
 st.rerun()
