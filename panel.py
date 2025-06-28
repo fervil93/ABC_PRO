@@ -88,7 +88,6 @@ st.markdown("""
     /* Barra de estado centrada */
     .status-line {
         display: flex;
-        flex-direction: column;
         justify-content: center;
         background-color: #f8f9fa;
         padding: 10px;
@@ -98,28 +97,37 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         text-align: center;
     }
-    .status-row {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 8px;
-    }
     .status-item {
         flex: 1; 
         text-align: center;
         padding: 0 20px;
     }
-    .symbol-container {
+    
+    /* Desplegable para pares disponibles */
+    .status-item details {
+        display: inline-block;
+    }
+    .status-item details summary {
+        cursor: pointer;
+        font-weight: 600;
+        display: inline;
+    }
+    .symbol-dropdown {
         display: flex;
         flex-wrap: wrap;
         gap: 5px;
-        justify-content: center;
+        padding: 8px;
         margin-top: 5px;
+        background-color: #fff;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     .symbol-badge {
         background-color: #e9ecef;
-        padding: 3px 6px;
+        padding: 3px 8px;
         border-radius: 4px;
-        font-size: 0.75rem;
+        font-size: 0.85rem;
         font-family: monospace;
     }
     
@@ -161,26 +169,11 @@ st.markdown("""
         border-left: 5px solid #dc3545;
     }
     
-    /* Botones pequeños y en línea */
-    .close-buttons-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        justify-content: center;
-        margin-bottom: 15px;
-    }
-    .close-button {
-        background-color: #dc3545;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 5px 10px;
-        font-size: 0.85rem;
-        cursor: pointer;
-        transition: background-color 0.3s;
-    }
-    .close-button:hover {
-        background-color: #bd2130;
+    /* Botones más visibles y centrados */
+    .stButton > button {
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+        width: 100%;
     }
     
     /* Nota de actualización */
@@ -419,64 +412,6 @@ def cerrar_posicion(symbol, position_amount):
     except Exception as e:
         return False, f"Error: {e}"
 
-# Función JavaScript para cerrar posiciones
-def crear_js_cerrar_posiciones(posiciones):
-    js_code = """
-    <script>
-    function cerrarPosicion(symbol, side, size) {
-        // Mostrar mensaje de procesando
-        document.getElementById('mensaje').innerHTML = 'Cerrando posición ' + symbol + '...';
-        document.getElementById('mensaje').style.display = 'block';
-        
-        // Llamar a la API
-        fetch('/cerrar_posicion', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                symbol: symbol,
-                side: side,
-                size: size
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Mostrar resultado
-            if(data.success) {
-                document.getElementById('mensaje').innerHTML = data.message;
-                document.getElementById('mensaje').className = 'mensaje success';
-            } else {
-                document.getElementById('mensaje').innerHTML = data.message;
-                document.getElementById('mensaje').className = 'mensaje error';
-            }
-            
-            // Recargar después de un segundo
-            setTimeout(function() { window.location.reload(); }, 1000);
-        })
-        .catch(error => {
-            document.getElementById('mensaje').innerHTML = 'Error: ' + error;
-            document.getElementById('mensaje').className = 'mensaje error';
-        });
-    }
-    </script>
-    
-    <div id="mensaje" class="mensaje" style="display: none;"></div>
-    <div class="close-buttons-container">
-    """
-    
-    # Crear botón para cada posición
-    for pos in posiciones:
-        side = "sell" if pos['raw_position'] > 0 else "buy"
-        js_code += f"""
-        <button class="close-button" onclick="cerrarPosicion('{pos['symbol']}', '{side}', {abs(pos['raw_position'])})">
-            Cerrar {pos['symbol']} ({pos['direction']})
-        </button>
-        """
-    
-    js_code += "</div>"
-    return js_code
-
 # Función para cargar datos de historial
 @st.cache_data(ttl=300)  # Cachear por 5 minutos
 def cargar_datos_historial():
@@ -554,15 +489,13 @@ with tab1:
     st.markdown(
         f"""
         <div class="status-line">
-            <div class="status-row">
-                <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
-                <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
-            </div>
-            <div class="status-row">
-                <div class="status-item">📊 Pares ({simbolos_count}):</div>
-            </div>
-            <div class="symbol-container">
-                {simbolos_html or "No hay pares disponibles"}
+            <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
+            <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
+            <div class="status-item">
+                <details>
+                    <summary>📊 Pares ({simbolos_count})</summary>
+                    <div class="symbol-dropdown">{simbolos_html or "No hay pares disponibles"}</div>
+                </details>
             </div>
         </div>
         """,
@@ -593,7 +526,7 @@ with tab1:
         st.session_state.mensaje = None
         st.session_state.tipo_mensaje = None
     
-    # Posiciones abiertas
+    # Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
     st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
     
     if not posiciones:
@@ -646,43 +579,23 @@ with tab1:
         # Mostrar tabla
         st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         
-        # Botones en línea para cerrar posiciones
+        # Botones para cerrar posiciones - Ahora con h3 consistente
         st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
         
-        # Crear botones en línea usando HTML
-        botones_html = '<div class="close-buttons-container">'
+        # Crear dos columnas para mostrar botones en filas de a pares
+        num_columns = 2
+        cols = st.columns(num_columns)
+        
         for i, pos in enumerate(posiciones):
-            # Crear un ID único para cada botón
-            btn_id = f"btn_{pos['symbol']}_{i}"
-            # Añadir botón HTML
-            botones_html += f"""
-            <button class="close-button" id="{btn_id}" 
-            onclick="document.getElementById('{btn_id}').innerText='Cerrando...';
-            document.getElementById('{btn_id}').disabled=true;">
-                Cerrar {pos['symbol']} ({pos['direction']})
-            </button>
-            """
-            # Crear los botones reales de Streamlit pero ocultos para manejar la lógica
-            if st.button(f"Cerrar {pos['symbol']}", key=btn_id, help=f"Cerrar posición {pos['symbol']}", 
-                        type="primary", use_container_width=False):
-                with st.spinner(f"Cerrando {pos['symbol']}..."):
-                    success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
-                    st.session_state.mensaje = mensaje
-                    st.session_state.tipo_mensaje = "success" if success else "error"
-                    time.sleep(1)
-                    st.rerun()
-        
-        botones_html += '</div>'
-        st.markdown(botones_html, unsafe_allow_html=True)
-        
-        # Ocultar los botones de Streamlit con CSS
-        st.markdown("""
-        <style>
-        [data-testid="baseButton-primary"] {
-            display: none !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+            col_index = i % num_columns
+            with cols[col_index]:
+                if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
+                    with st.spinner(f"Cerrando {pos['symbol']}..."):
+                        success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+                        st.session_state.mensaje = mensaje
+                        st.session_state.tipo_mensaje = "success" if success else "error"
+                        time.sleep(1)  # Pequeña pausa
+                        st.rerun()  # Correcto en versiones recientes de Streamlit
 
 # Tab 2: Estadísticas
 with tab2:
