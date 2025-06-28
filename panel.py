@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS mejorados
+# Estilos CSS mejorados con texto centrado
 st.markdown("""
 <style>
     /* Estilos generales y centrado */
@@ -25,20 +25,37 @@ st.markdown("""
         margin-right: auto !important;
     }
     
+    /* Centrar todo el texto por defecto */
+    body {
+        text-align: center !important;
+    }
+    
+    /* Centrar encabezados */
+    h1, h2, h3, h4, h5, h6, p {
+        text-align: center !important;
+    }
+    
+    /* Información y mensajes centrados */
+    .stAlert {
+        text-align: center !important;
+    }
+    
     /* Tamaños de texto */
     h1 {font-size: 1.5rem; margin-bottom: 0.5rem;}
     h2 {font-size: 1.3rem; margin-bottom: 0.8rem;}
     h3 {font-size: 1.1rem; margin-top: 1rem; margin-bottom: 0.5rem;}
     
-    /* Tabla más profesional */
+    /* Tabla más profesional y centrada */
     .dataframe {
         width: 100%; 
         font-size: 1rem;
         border-collapse: collapse;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
     .dataframe th {
         background-color: #f1f3f5; 
-        text-align: left; 
+        text-align: center !important; 
         padding: 8px;
         border-bottom: 2px solid #dee2e6;
         font-weight: 600;
@@ -46,6 +63,7 @@ st.markdown("""
     .dataframe td {
         padding: 8px;
         border-bottom: 1px solid #e9ecef;
+        text-align: center !important;
     }
     .dataframe tr:hover {
         background-color: #f8f9fa;
@@ -55,20 +73,25 @@ st.markdown("""
     .profit {color: #28a745; font-weight: 600;}
     .loss {color: #dc3545; font-weight: 600;}
     
-    /* Barra de estado */
+    /* Barra de estado centrada */
     .status-line {
         display: flex;
-        justify-content: space-between;
+        justify-content: center;
         background-color: #f8f9fa;
         padding: 10px;
         border-radius: 5px;
         margin-bottom: 20px;
         font-size: 1rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        text-align: center;
     }
-    .status-item {flex: 1; text-align: center;}
+    .status-item {
+        flex: 1; 
+        text-align: center;
+        padding: 0 20px;
+    }
     
-    /* Config-Box */
+    /* Config-Box centrado */
     .config-box {
         background-color: #f8f9fa;
         padding: 12px;
@@ -76,21 +99,24 @@ st.markdown("""
         margin-bottom: 20px;
         font-size: 1rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        text-align: center;
     }
     .config-item {
         display: inline-block;
         margin-right: 20px;
+        text-align: center;
     }
     .config-value {
         font-weight: 600;
     }
     
-    /* Mensaje */
+    /* Mensaje centrado */
     .mensaje {
         padding: 10px;
         border-radius: 5px;
         margin-bottom: 15px;
         font-size: 1rem;
+        text-align: center;
     }
     .mensaje.success {
         background-color: #d4edda; 
@@ -103,11 +129,12 @@ st.markdown("""
         border-left: 5px solid #dc3545;
     }
     
-    /* Símbolos disponibles */
+    /* Símbolos disponibles centrados */
     .symbol-container {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+        justify-content: center;
     }
     .symbol-badge {
         background-color: #e9ecef;
@@ -117,11 +144,19 @@ st.markdown("""
         font-family: monospace;
     }
     
-    /* Botones más visibles */
+    /* Botones más visibles y centrados */
     .stButton > button {
         font-size: 1rem;
         padding: 0.5rem 1rem;
         width: 100%;
+    }
+    
+    /* Nota de actualización */
+    .refresh-note {
+        text-align: center;
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin-top: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -242,7 +277,7 @@ def cerrar_posicion(symbol, position_amount):
         return False, f"Error: {e}"
 
 # Encabezado
-st.markdown("## 📊 Monitor Trading Hyperliquid")
+st.markdown("<h1 style='text-align: center;'>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
 
 # Obtener datos de Hyperliquid
 datos = obtener_datos_hyperliquid()
@@ -296,7 +331,7 @@ if st.session_state.mensaje:
     st.session_state.tipo_mensaje = None
 
 # Posiciones abiertas
-st.markdown("### Posiciones Abiertas")
+st.markdown("<h2 style='text-align: center;'>Posiciones Abiertas</h2>", unsafe_allow_html=True)
 
 if not posiciones:
     st.info("🧙‍♂️ No hay operaciones abiertas.")
@@ -329,7 +364,7 @@ else:
     st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
     
     # Botones para cerrar posiciones
-    st.write("### Cerrar posiciones")
+    st.markdown("<h3 style='text-align: center;'>Cerrar posiciones</h3>", unsafe_allow_html=True)
     
     # Crear dos columnas para mostrar botones en filas de a pares
     num_columns = 2
@@ -347,7 +382,7 @@ else:
                     st.rerun()  # Correcto en versiones recientes de Streamlit
 
 # Pares disponibles (simple)
-st.markdown("### Pares Disponibles")
+st.markdown("<h3 style='text-align: center;'>Pares Disponibles</h3>", unsafe_allow_html=True)
 simbolos = []
 try:
     if os.path.exists("simbolos_disponibles.txt"):
@@ -362,14 +397,17 @@ if simbolos:
 else:
     st.info("No hay pares disponibles.")
 
-# Auto-actualización
+# Mostrar mensaje de actualización
+st.markdown('<p class="refresh-note">Actualizando automáticamente cada 5 segundos...</p>', unsafe_allow_html=True)
+
+# Auto-actualización (cada 5 segundos)
 st.markdown(
     """
     <script>
         function updatePage() {
             window.location.reload();
         }
-        setTimeout(updatePage, 30000);
+        setTimeout(updatePage, 5000); // 5000 ms = 5 segundos
     </script>
     """,
     unsafe_allow_html=True
