@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import os
+import json
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from hyperliquid_client import HyperliquidClient
@@ -245,6 +246,10 @@ AUTO_REFRESH_SECONDS = 5
 # Constante para archivo de historial
 PNL_HISTORY_FILE = "pnl_history.csv"
 
+# Archivos de niveles TP
+TP_ORDERS_FILE = "tp_orders.json"
+ATR_LEVELS_FILE = "trade_levels_atr.json"
+
 # Función para cargar configuración
 def cargar_configuracion():
     try:
@@ -263,6 +268,42 @@ def cargar_configuracion():
             "atr_tp_mult": 1.2,
             "max_tp_pct": 0.02
         }
+
+# Función para cargar niveles TP
+def cargar_niveles_tp():
+    try:
+        niveles_tp = {}
+        
+        # Intentar cargar desde tp_orders.json
+        if os.path.exists(TP_ORDERS_FILE):
+            with open(TP_ORDERS_FILE, "r") as f:
+                tp_orders = json.load(f)
+                for symbol, data in tp_orders.items():
+                    niveles_tp[symbol] = data.get("price", 0)
+        
+        # Si no hay datos o faltan símbolos, intentar con trade_levels_atr.json
+        if os.path.exists(ATR_LEVELS_FILE):
+            with open(ATR_LEVELS_FILE, "r") as f:
+                atr_levels = json.load(f)
+                for symbol, data in atr_levels.items():
+                    if symbol not in niveles_tp and "tp_fijo" in data:
+                        niveles_tp[symbol] = data.get("tp_fijo", 0)
+                        
+        return niveles_tp
+    except Exception as e:
+        print(f"Error al cargar niveles TP: {e}")
+        return {}
+
+# Función para obtener el precio actual de un símbolo
+def obtener_precio_actual(symbol):
+    try:
+        precio = client.get_price(symbol)
+        if precio and "mid" in precio:
+            return float(precio["mid"])
+        return None
+    except Exception as e:
+        print(f"Error obteniendo precio para {symbol}: {e}")
+        return None
 
 # Función para obtener datos directamente de Hyperliquid
 def obtener_datos_hyperliquid():
@@ -400,6 +441,9 @@ with tab1:
     saldo = datos['saldo']
     posiciones = datos['posiciones']
     
+    # Cargar niveles TP
+    niveles_tp = cargar_niveles_tp()
+    
     # Información de tiempo activo
     tiempo_activo = "N/A"
     try:
@@ -455,6 +499,9 @@ with tab1:
         # Crear datos para la tabla
         data = []
         for pos in posiciones:
+            symbol = pos['symbol']
+            precio_actual = obtener_precio_actual(symbol)
+            
             # Formatear PnL
             pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
             pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f}</span>"
@@ -463,13 +510,30 @@ with tab1:
             liq = "N/A"
             if pos.get('liquidation_price'):
                 liq = f"{pos['liquidation_price']:.5f}"
+            
+            # Obtener nivel de TP
+            tp_price = niveles_tp.get(symbol, "N/A")
+            
+            # Calcular distancia al TP
+            pct_al_tp = "N/A"
+            if tp_price != "N/A" and precio_actual:
+                if pos['direction'] == "LONG":  # LONG
+                    pct_al_tp = (float(tp_price) - precio_actual) / precio_actual * 100
+                else:  # SHORT
+                    pct_al_tp = (precio_actual - float(tp_price)) / precio_actual * 100
+                
+                # Formatear con color según cercanía al TP
+                pct_class = "profit" if pct_al_tp < 0.5 else ""
+                pct_al_tp = f"<span class='{pct_class}'>{pct_al_tp:.2f}%</span>"
                 
             data.append({
-                "Símbolo": pos['symbol'],
+                "Símbolo": symbol,
                 "Dirección": pos['direction'],
                 "Tamaño": f"{pos['size']:.1f}",
                 "Precio Entrada": f"{pos['entryPrice']:.5f}",
-                "Liquidación": liq,
+                "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
+                "Take Profit": f"{tp_price:.5f}" if tp_price != "N/A" else "N/A",
+                "% al TP": pct_al_tp,
                 "PnL": pnl_formatted,
             })
         
@@ -538,7 +602,7 @@ with tab2:
             simbolo_seleccionado = st.selectbox("Símbolo:", simbolos)
         
         with col3:
-            direcciones = ['Todas', 'long', 'short']
+            direcciones = ['Todas', 'BUY', 'SELL']
             direccion_seleccionada = st.selectbox("Dirección:", direcciones)
         
         # Aplicar filtros
