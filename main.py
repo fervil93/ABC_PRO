@@ -597,14 +597,14 @@ def crear_orden_tp_hyperliquid(symbol, side, quantity, price):
         # Implementamos la lógica para crear una orden límite usando la API disponible
         is_buy = side.lower() == "buy"
         
-        # NUEVA IMPLEMENTACIÓN - Utilizar directamente client.create_order
+        # Intento 1: Usar create_order pero sin el parámetro 'type'
         try:
             orden = client.create_order(
                 symbol=symbol,
                 side=side,
                 size=quantity,
-                price=price_rounded,
-                type="limit"
+                price=price_rounded
+                # Eliminado el parámetro 'type="limit"'
             )
             
             if orden and "status" in orden:
@@ -613,26 +613,20 @@ def crear_orden_tp_hyperliquid(symbol, side, quantity, price):
             else:
                 print(f"[{symbol}] Error al crear orden TP: respuesta sin status")
                 logging.error(f"Error al crear orden TP para {symbol}: {orden}")
-                return None
-                
-        except AttributeError:
-            # Si client.create_order no acepta estos parámetros, intentar alternativa
-            print(f"[{symbol}] ERROR: client.create_order no acepta los parámetros proporcionados")
-            
-            # Intentar usar exchange.limit_open si está disponible
-            try:
-                orden = client.exchange.limit_open(symbol, is_buy, quantity, price_rounded)
-                if orden and "status" in orden:
-                    print(f"[{symbol}] Orden TP creada exitosamente (método alternativo): {orden}")
-                    return orden
-            except Exception as e2:
-                print(f"[{symbol}] Error en método alternativo: {e2}")
                 
         except Exception as e:
-            print(f"[{symbol}] Error al crear orden TP: {e}")
-            logging.error(f"Error al crear orden TP para {symbol}: {e}", exc_info=True)
+            print(f"[{symbol}] Error al crear orden TP con método principal: {e}")
+        
+        # Intento 2: Usar exchange.limit_open si está disponible
+        try:
+            orden = client.exchange.limit_open(symbol, is_buy, quantity, price_rounded)
+            if orden and "status" in orden:
+                print(f"[{symbol}] Orden TP creada exitosamente (método alternativo): {orden}")
+                return orden
+        except Exception as e2:
+            print(f"[{symbol}] Error en método alternativo de TP: {e2}")
             
-        # Si llegamos aquí, es que falló todas las opciones anteriores
+        # Si llegamos aquí, es que fallaron todas las opciones anteriores
         # Creamos un TP en modo manual (solo para seguimiento)
         print(f"[{symbol}] Usando modo de TP manual como fallback")
         return {"status": "manual_tp", "tp_price": price_rounded}
