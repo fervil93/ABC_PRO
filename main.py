@@ -26,7 +26,7 @@ with open("tiempo_inicio_bot.txt", "w") as f:
 client = HyperliquidClient()
 
 ATR_SL_MULT = 1.0
-MIN_POTENTIAL_PROFIT = 0.45
+# MIN_POTENTIAL_PROFIT eliminado
 
 SPREAD_MAX_PCT_POR_SIMBOLO = {
     "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 1.5, "XRP": 2.0, "ADA": 1.5,
@@ -407,8 +407,8 @@ def aplicar_condiciones_microestructura_v2(df, precio_actual, symbol):
     prev_max = df['high'].iloc[-6:-1].max()
     prev_min = df['low'].iloc[-6:-1].min()
 
-    if atr_actual < 0.7 * atr_media_actual:
-        razon = f"ATR actual ({atr_actual:.6f}) < 0.7*ATR20 media ({0.7*atr_media_actual:.6f})."
+    if atr_actual < 0.5 * atr_media_actual:  # Reducido de 0.7 a 0.5
+        razon = f"ATR actual ({atr_actual:.6f}) < 0.5*ATR20 media ({0.5*atr_media_actual:.6f})."
         return None, razon, None, None
 
     long_signal = (
@@ -425,11 +425,7 @@ def aplicar_condiciones_microestructura_v2(df, precio_actual, symbol):
     if long_signal or short_signal:
         accion = 'BUY' if long_signal else 'SELL'
         razon = f"Señal {'LONG' if long_signal else 'SHORT'}: spike volumen, ruptura real y tendencia {'alcista' if long_signal else 'bajista'} EMA30."
-        fee_est = close_actual * 0.001 * 3
-        tp = calcular_tp_atr(close_actual, atr_actual, accion)
-        potential_profit = abs(tp - close_actual) - fee_est
-        if potential_profit < MIN_POTENTIAL_PROFIT:
-            return None, f"El potencial de ganancia neta ({potential_profit:.4f}) es insuficiente para operar.", None, None
+        # Eliminado completamente el código de potential profit
         return accion, razon, atr_actual, close_actual
 
     razon = f"No se detecta señal de microestructura (volumen spike: {df['vol_spike'].iloc[-1]})"
