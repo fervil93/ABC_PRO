@@ -152,29 +152,27 @@ st.markdown("""
         border-left: 5px solid #dc3545;
     }
     
-    /* Botones de cierre inline */
-    .close-buttons-container {
+    /* Botones en línea */
+    .button-row {
         display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
         justify-content: center;
-        margin-top: 10px;
-        margin-bottom: 15px;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 15px auto;
     }
-    
-    .custom-button {
-        background-color: #dc3545;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 5px 10px;
-        font-size: 0.85rem;
-        cursor: pointer;
-        margin: 0 3px;
+    .button-row > div {
+        margin: 0 !important;
+        padding: 0 !important;
     }
-    
-    .custom-button:hover {
-        background-color: #c82333;
+    .button-row button {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border: none !important;
+        padding: 0.3rem 0.7rem !important;
+        font-size: 0.85rem !important;
+        height: auto !important;
+        min-height: 0 !important;
+        line-height: normal !important;
     }
     
     /* Nota de actualización */
@@ -237,9 +235,6 @@ st.markdown("""
         background-color: #e9ecef;
         border-bottom: 2px solid #0066cc;
     }
-    
-    /* Ocultar botones de Streamlit originales */
-    div.stButton {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -567,31 +562,20 @@ with tab1:
         
         # Botones para cerrar posiciones en una sola fila
         st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
-        
-        # Crear los botones de Streamlit invisibles para manejar la lógica
-        for i, pos in enumerate(posiciones):
-            if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
-                with st.spinner(f"Cerrando {pos['symbol']}..."):
-                    success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
-                    st.session_state.mensaje = mensaje
-                    st.session_state.tipo_mensaje = "success" if success else "error"
-                    time.sleep(1)
-                    st.rerun()
-        
-        # Mostrar botones personalizados en línea
-        buttons_html = '<div class="close-buttons-container">'
-        for i, pos in enumerate(posiciones):
-            btn_id = f"btn_{pos['symbol']}"
-            buttons_html += f"""
-            <button class="custom-button" 
-                    onclick="document.getElementById('{btn_id}').click();">
-                Cerrar {pos['symbol']} ({pos['direction']})
-            </button>
-            """
-        buttons_html += '</div>'
-        
-        # Mostrar los botones HTML
-        st.markdown(buttons_html, unsafe_allow_html=True)
+
+        # Contenedor para poner botones en una fila
+        st.markdown('<div class="button-row">', unsafe_allow_html=True)
+        cols = st.columns(len(posiciones))  # Crear tantas columnas como posiciones haya
+        for i, (col, pos) in enumerate(zip(cols, posiciones)):
+            with col:
+                if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
+                    with st.spinner(f"Cerrando {pos['symbol']}..."):
+                        success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+                        st.session_state.mensaje = mensaje
+                        st.session_state.tipo_mensaje = "success" if success else "error"
+                        time.sleep(1)
+                        st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Tab 2: Estadísticas
 with tab2:
