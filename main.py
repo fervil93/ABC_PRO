@@ -656,13 +656,25 @@ def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
         dict: Orden TP si se estableció
     """
     try:
-        # Ejecutar la orden principal (market)
-        orden_principal = client.create_order(
-            symbol=symbol,
-            side=side,
-            size=quantity,
-            type="market"
-        )
+        # Ejecutar la orden principal (market) - MODIFICADO para quitar el parámetro 'type'
+        try:
+            orden_principal = client.create_order(
+                symbol=symbol,
+                side=side,
+                size=quantity
+                # Eliminado el parámetro 'type="market"' que causa el error
+            )
+        except TypeError as e:
+            # Si falla, intentar con un método alternativo
+            print(f"[{symbol}] Error con create_order estándar: {e}")
+            try:
+                # Intentar usando exchange.market_open si está disponible
+                is_buy = side.lower() == "buy"
+                orden_principal = client.exchange.market_open(symbol, is_buy, quantity)
+            except Exception as e2:
+                print(f"[{symbol}] Error con método alternativo: {e2}")
+                enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol}: {e2}", tipo="error")
+                return None, None
         
         if not orden_principal or "status" not in orden_principal:
             enviar_telegram(f"⚠️ Error al ejecutar orden para {symbol}", tipo="error")
