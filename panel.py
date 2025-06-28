@@ -103,6 +103,34 @@ st.markdown("""
         padding: 0 20px;
     }
     
+    /* Desplegable para pares disponibles */
+    .status-item details {
+        display: inline-block;
+    }
+    .status-item details summary {
+        cursor: pointer;
+        font-weight: 600;
+        display: inline;
+    }
+    .symbol-dropdown {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        padding: 8px;
+        margin-top: 5px;
+        background-color: #fff;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .symbol-badge {
+        background-color: #e9ecef;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-family: monospace;
+    }
+    
     /* Config-Box centrado */
     .config-box {
         background-color: #f8f9fa;
@@ -139,21 +167,6 @@ st.markdown("""
         background-color: #f8d7da; 
         color: #721c24;
         border-left: 5px solid #dc3545;
-    }
-    
-    /* Símbolos disponibles centrados */
-    .symbol-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        justify-content: center;
-    }
-    .symbol-badge {
-        background-color: #e9ecef;
-        padding: 5px 10px;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        font-family: monospace;
     }
     
     /* Botones más visibles y centrados */
@@ -268,6 +281,16 @@ def cargar_configuracion():
             "atr_tp_mult": 1.2,
             "max_tp_pct": 0.02
         }
+
+# Función para cargar símbolos disponibles
+def cargar_simbolos_disponibles():
+    try:
+        if os.path.exists("simbolos_disponibles.txt"):
+            with open("simbolos_disponibles.txt", "r") as f:
+                return f.read().strip().split(",")
+        return []
+    except Exception:
+        return []
 
 # Función para cargar niveles TP
 def cargar_niveles_tp():
@@ -454,13 +477,26 @@ with tab1:
     except Exception:
         pass
     
-    # Barra de estado
+    # Cargar símbolos disponibles
+    simbolos = cargar_simbolos_disponibles()
+    simbolos_count = len(simbolos)
+    simbolos_html = ""
+    if simbolos:
+        simbolos_html = "".join([f'<span class="symbol-badge">{s}</span>' for s in simbolos])
+    
+    # Barra de estado con pares disponibles integrados
     saldo_texto = f"{saldo:.2f} USDT" if saldo is not None else "N/A USDT"
     st.markdown(
         f"""
         <div class="status-line">
             <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
             <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
+            <div class="status-item">
+                <details>
+                    <summary>📊 Pares ({simbolos_count})</summary>
+                    <div class="symbol-dropdown">{simbolos_html or "No hay pares disponibles"}</div>
+                </details>
+            </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -509,7 +545,7 @@ with tab1:
             # Formatear liquidación
             liq = "N/A"
             if pos.get('liquidation_price'):
-                liq = f"{pos['liquidation_price']:.5f}"
+                liq = f"{pos['liquidation_price']:.2f}"
             
             # Obtener nivel de TP
             tp_price = niveles_tp.get(symbol, "N/A")
@@ -530,9 +566,9 @@ with tab1:
                 "Símbolo": symbol,
                 "Dirección": pos['direction'],
                 "Tamaño": f"{pos['size']:.1f}",
-                "Precio Entrada": f"{pos['entryPrice']:.5f}",
-                "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
-                "Take Profit": f"{tp_price:.5f}" if tp_price != "N/A" else "N/A",
+                "Precio Entrada": f"{pos['entryPrice']:.2f}",
+                "Precio Actual": f"{precio_actual:.2f}" if precio_actual else "N/A",
+                "Take Profit": f"{float(tp_price):.2f}" if tp_price != "N/A" else "N/A",
                 "% al TP": pct_al_tp,
                 "PnL": pnl_formatted,
             })
@@ -560,22 +596,6 @@ with tab1:
                         st.session_state.tipo_mensaje = "success" if success else "error"
                         time.sleep(1)  # Pequeña pausa
                         st.rerun()  # Correcto en versiones recientes de Streamlit
-    
-    # Pares disponibles (simple) - Ahora con h3 consistente
-    st.markdown("<h3>Pares Disponibles</h3>", unsafe_allow_html=True)
-    simbolos = []
-    try:
-        if os.path.exists("simbolos_disponibles.txt"):
-            with open("simbolos_disponibles.txt", "r") as f:
-                simbolos = f.read().strip().split(",")
-    except Exception:
-        pass
-    
-    if simbolos:
-        simbolos_html = "".join([f'<span class="symbol-badge">{s}</span>' for s in simbolos])
-        st.markdown(f'<div class="symbol-container">{simbolos_html}</div>', unsafe_allow_html=True)
-    else:
-        st.info("No hay pares disponibles.")
 
 # Tab 2: Estadísticas
 with tab2:
@@ -739,6 +759,10 @@ with tab2:
                 return f'<span class="{pnl_class}">{float(pnl):.2f}</span>'
             
             display_df['pnl_formatted'] = display_df['pnl_real'].apply(format_pnl)
+            
+            # Formatear precios con menos decimales
+            display_df['precio_entrada'] = display_df['precio_entrada'].apply(lambda x: f"{float(x):.2f}")
+            display_df['precio_salida'] = display_df['precio_salida'].apply(lambda x: f"{float(x):.2f}")
             
             # Seleccionar y renombrar columnas
             display_df = display_df[['timestamp', 'symbol', 'direccion', 'precio_entrada', 
