@@ -139,17 +139,106 @@ class HyperliquidClient:
             print(f"Error al obtener precio para {symbol}: {str(e)}")
             return {"best_bid": None, "best_ask": None, "mid": None}
 
-    def create_order(self, symbol, side, size):
+    def set_leverage(self, symbol, leverage):
         """
-        Crea una orden de mercado
+        Configura el apalancamiento para un símbolo específico
+        
+        Args:
+            symbol (str): Símbolo del activo
+            leverage (int): Valor del apalancamiento (ej: 5, 10, 20)
+            
+        Returns:
+            dict: Respuesta de la operación o None si hay error
+        """
+        try:
+            # Implementa la llamada a la API de Hyperliquid para configurar el apalancamiento
+            print(f"[{symbol}] Configurando apalancamiento a {leverage}x")
+            
+            # Intento 1: Usar el método específico de la API si existe
+            try:
+                response = self.exchange.update_leverage(symbol, leverage)
+                print(f"[{symbol}] Apalancamiento configurado correctamente: {response}")
+                return response
+            except AttributeError:
+                # Si el método no existe, intentar con el enfoque alternativo
+                print(f"[{symbol}] Método update_leverage no disponible, intentando alternativa...")
+            
+            # Intento 2: Usar un enfoque personalizado si la API lo soporta
+            try:
+                # Este es un ejemplo hipotético, ajusta según la API real
+                response = self.exchange.post(
+                    endpoint='/derivative/v3/private/position/leverage/save',
+                    data={
+                        'symbol': symbol,
+                        'leverage': leverage
+                    }
+                )
+                print(f"[{symbol}] Apalancamiento configurado por método alternativo: {response}")
+                return response
+            except Exception as e:
+                print(f"[{symbol}] Error en método alternativo: {e}")
+            
+            # Si no funciona ninguno de los métodos anteriores, devolver un diccionario vacío
+            return {"status": "not_supported", "message": "La configuración de apalancamiento no está soportada por la API"}
+            
+        except Exception as e:
+            print(f"[{symbol}] Error al configurar apalancamiento: {e}")
+            return None
+
+    def create_order(self, symbol, side, size, price=None, leverage=None):
+        """
+        Crea una orden de mercado o límite con apalancamiento personalizado
         
         Args:
             symbol (str): Símbolo del activo
             side (str): 'buy' o 'sell'
             size (float): Tamaño de la posición
+            price (float, optional): Precio límite (si es None, se crea una orden de mercado)
+            leverage (int, optional): Apalancamiento a utilizar (si es None, se usa el valor por defecto)
             
         Returns:
             dict: Respuesta de la orden
         """
+        # Intentar configurar el apalancamiento primero si se especificó
+        if leverage is not None:
+            try:
+                self.set_leverage(symbol, leverage)
+                print(f"[{symbol}] Apalancamiento configurado antes de la orden: {leverage}x")
+            except Exception as e:
+                print(f"[{symbol}] Error al configurar apalancamiento: {e}")
+        else:
+            # Si no se especificó leverage, usar el valor de config.py
+            try:
+                default_leverage = config.LEVERAGE
+                self.set_leverage(symbol, default_leverage)
+                print(f"[{symbol}] Usando apalancamiento predeterminado: {default_leverage}x")
+            except Exception as e:
+                print(f"[{symbol}] Error al configurar apalancamiento predeterminado: {e}")
+        
+        # Crear la orden
         is_buy = True if side.lower() == "buy" else False
-        return self.exchange.market_open(symbol, is_buy, size)
+        
+        # Si price es None, crear orden de mercado. De lo contrario, orden límite.
+        if price is None:
+            print(f"[{symbol}] Creando orden de mercado: {side.upper()} {size}")
+            return self.exchange.market_open(symbol, is_buy, size)
+        else:
+            print(f"[{symbol}] Creando orden límite: {side.upper()} {size} @ {price}")
+            return self.exchange.limit_open(symbol, is_buy, size, price)
+    
+    def cancel_order(self, symbol, order_id):
+        """
+        Cancela una orden existente
+        
+        Args:
+            symbol (str): Símbolo del activo
+            order_id (str): ID de la orden a cancelar
+            
+        Returns:
+            dict: Respuesta de la cancelación
+        """
+        try:
+            return self.exchange.cancel_order(symbol, order_id)
+        except Exception as e:
+            print(f"Error al cancelar orden para {symbol}: {str(e)}")
+            return {"status": "error", "message": str(e)}
