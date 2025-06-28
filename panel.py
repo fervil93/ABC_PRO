@@ -96,39 +96,22 @@ st.markdown("""
         font-size: 1rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         text-align: center;
+        flex-wrap: wrap;
     }
     .status-item {
         flex: 1; 
         text-align: center;
-        padding: 0 20px;
-    }
-    
-    /* Desplegable para pares disponibles */
-    .status-item details {
-        display: inline-block;
-    }
-    .status-item details summary {
-        cursor: pointer;
-        font-weight: 600;
-        display: inline;
-    }
-    .symbol-dropdown {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        padding: 8px;
-        margin-top: 5px;
-        background-color: #fff;
-        border-radius: 4px;
-        border: 1px solid #dee2e6;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        padding: 0 15px;
+        min-width: 150px;
     }
     .symbol-badge {
         background-color: #e9ecef;
-        padding: 3px 8px;
+        padding: 3px 6px;
         border-radius: 4px;
-        font-size: 0.85rem;
+        font-size: 0.7rem;
         font-family: monospace;
+        margin: 0 1px;
+        display: inline-block;
     }
     
     /* Config-Box centrado */
@@ -169,11 +152,30 @@ st.markdown("""
         border-left: 5px solid #dc3545;
     }
     
-    /* Botones más visibles y centrados */
+    /* Botones más pequeños y en línea */
+    .close-buttons-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 15px;
+    }
+    
+    /* Hacer que los botones de Streamlit sean más pequeños y aparezcan en línea */
     .stButton > button {
-        font-size: 1rem;
-        padding: 0.5rem 1rem;
-        width: 100%;
+        font-size: 0.8rem !important;
+        padding: 0.2rem 0.5rem !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 3px !important;
+        flex-shrink: 1;
+        white-space: nowrap;
+    }
+    /* Hacer que los botones se muestren en línea */
+    .row-of-buttons .stButton {
+        display: inline-block !important;
+        margin: 0 2px !important;
+        width: auto !important;
     }
     
     /* Nota de actualización */
@@ -491,12 +493,7 @@ with tab1:
         <div class="status-line">
             <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
             <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
-            <div class="status-item">
-                <details>
-                    <summary>📊 Pares ({simbolos_count})</summary>
-                    <div class="symbol-dropdown">{simbolos_html or "No hay pares disponibles"}</div>
-                </details>
-            </div>
+            <div class="status-item">📊 Pares: {simbolos_html or "N/A"}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -579,23 +576,25 @@ with tab1:
         # Mostrar tabla
         st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         
-        # Botones para cerrar posiciones - Ahora con h3 consistente
+        # Botones para cerrar posiciones - En una sola fila
         st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
         
-        # Crear dos columnas para mostrar botones en filas de a pares
-        num_columns = 2
-        cols = st.columns(num_columns)
+        # Usar columnas para alinear los botones en una fila
+        st.markdown('<div class="row-of-buttons" style="text-align: center;">', unsafe_allow_html=True)
         
+        # Crear botones en línea
         for i, pos in enumerate(posiciones):
-            col_index = i % num_columns
-            with cols[col_index]:
-                if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
-                    with st.spinner(f"Cerrando {pos['symbol']}..."):
-                        success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
-                        st.session_state.mensaje = mensaje
-                        st.session_state.tipo_mensaje = "success" if success else "error"
-                        time.sleep(1)  # Pequeña pausa
-                        st.rerun()  # Correcto en versiones recientes de Streamlit
+            # Crear el botón para cerrar la posición
+            if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
+                with st.spinner(f"Cerrando {pos['symbol']}..."):
+                    success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+                    st.session_state.mensaje = mensaje
+                    st.session_state.tipo_mensaje = "success" if success else "error"
+                    time.sleep(1)
+                    st.rerun()
+        
+        # Cerrar el div de los botones
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Tab 2: Estadísticas
 with tab2:
