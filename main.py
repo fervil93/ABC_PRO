@@ -646,20 +646,27 @@ def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
         dict: Orden TP si se estableció
     """
     try:
-        # Ejecutar la orden principal (market) - MODIFICADO para quitar el parámetro 'type'
+        # Ejecutar la orden principal (market) - MODIFICACIÓN para aplicar apalancamiento
         try:
+            # Aplicar explícitamente el apalancamiento configurado
             orden_principal = client.create_order(
                 symbol=symbol,
                 side=side,
-                size=quantity
-                # Eliminado el parámetro 'type="market"' que causa el error
+                size=quantity,
+                leverage=LEVERAGE  # Añadimos el parámetro leverage explícitamente
             )
         except TypeError as e:
             # Si falla, intentar con un método alternativo
             print(f"[{symbol}] Error con create_order estándar: {e}")
             try:
-                # Intentar usando exchange.market_open si está disponible
+                # Intentar usando exchange.market_open si está disponible y aplicar apalancamiento
                 is_buy = side.lower() == "buy"
+                # Intentamos configurar el leverage primero si la API lo permite
+                try:
+                    client.set_leverage(symbol=symbol, leverage=LEVERAGE)
+                except Exception as e_lev:
+                    print(f"[{symbol}] Error configurando leverage: {e_lev}")
+                
                 orden_principal = client.exchange.market_open(symbol, is_buy, quantity)
             except Exception as e2:
                 print(f"[{symbol}] Error con método alternativo: {e2}")
