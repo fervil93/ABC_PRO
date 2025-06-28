@@ -1263,20 +1263,6 @@ if __name__ == "__main__":
                 else:
                     print(f"[{simbolo}] No se abre trade. Razón: {razon}")
 
-            # Envío resumen diario si corresponde
-            if resumen_diario["ultimo_envio"] != datetime.now().date():
-                enviar_telegram(
-                    f"📊 Resumen diario:\n"
-                    f"Trades abiertos: {resumen_diario['trades_abiertos']}\n"
-                    f"Trades cerrados: {resumen_diario['trades_cerrados']}\n"
-                    f"PnL total: {resumen_diario['pnl_total']:.4f} USDT",
-                    tipo="daily"
-                )
-                resumen_diario["trades_abiertos"] = 0
-                resumen_diario["trades_cerrados"] = 0
-                resumen_diario["pnl_total"] = 0.0
-                resumen_diario["ultimo_envio"] = datetime.now().date()
-
             print(f"\nEsperando {intervalo_segundos} segundos antes de la próxima evaluación...")
             time.sleep(intervalo_segundos)
     except Exception as e:
