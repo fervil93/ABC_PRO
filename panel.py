@@ -539,7 +539,7 @@ with tab1:
             # Formatear liquidación
             liq = "N/A"
             if pos.get('liquidation_price'):
-                liq = f"{pos['liquidation_price']:.2f}"
+                liq = f"{pos['liquidation_price']:.5f}"
             
             # Obtener nivel de TP
             tp_price = niveles_tp.get(symbol, "N/A")
@@ -548,9 +548,9 @@ with tab1:
                 "Símbolo": symbol,
                 "Dirección": pos['direction'],
                 "Tamaño": f"{pos['size']:.1f}",
-                "Precio Entrada": f"{pos['entryPrice']:.2f}",
-                "Precio Actual": f"{precio_actual:.2f}" if precio_actual else "N/A",
-                "Take Profit": f"{float(tp_price):.2f}" if tp_price != "N/A" else "N/A",
+                "Precio Entrada": f"{pos['entryPrice']:.5f}",
+                "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
+                "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
                 "PnL": pnl_formatted,
             })
         
@@ -741,8 +741,8 @@ with tab2:
             display_df['pnl_formatted'] = display_df['pnl_real'].apply(format_pnl)
             
             # Formatear precios con menos decimales
-            display_df['precio_entrada'] = display_df['precio_entrada'].apply(lambda x: f"{float(x):.2f}")
-            display_df['precio_salida'] = display_df['precio_salida'].apply(lambda x: f"{float(x):.2f}")
+            display_df['precio_entrada'] = display_df['precio_entrada'].apply(lambda x: f"{float(x):.5f}")
+            display_df['precio_salida'] = display_df['precio_salida'].apply(lambda x: f"{float(x):.5f}")
             
             # Seleccionar y renombrar columnas
             display_df = display_df[['timestamp', 'symbol', 'direccion', 'precio_entrada', 
