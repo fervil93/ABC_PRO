@@ -1210,9 +1210,3 @@ if __name__ == "__main__":
             now = datetime.now()
             if (now - ultimo_chequeo_huerfanas).total_seconds() > 3600:  # 3600 segundos = 1 hora
                 print("Verificando posiciones huérfanas...")
-                cerrar_posiciones_huerfanas()
-                ultimo_chequeo_huerfanas = now
-            
-            # --- Espera cooldown tras un trade abierto ---
-            if last_trade_time and (now - last_trade_time) < timedelta(minutes=COOLDOWN_MINUTES):
-                restante = timedelta(minutes=COOL
