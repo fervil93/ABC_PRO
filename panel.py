@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import os
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from hyperliquid_client import HyperliquidClient
 
@@ -173,6 +174,54 @@ st.markdown("""
     .stProgress > div > div {
         background-color: #f8f9fa !important;
     }
+    
+    /* Métricas destacadas */
+    .metric-container {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .metric {
+        text-align: center;
+        flex: 1;
+    }
+    .metric-title {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+    .metric-value.positive {
+        color: #28a745;
+    }
+    .metric-value.negative {
+        color: #dc3545;
+    }
+    
+    /* Tabs centradas */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        justify-content: center;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        padding: 10px 16px;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #e9ecef;
+        border-bottom: 2px solid #0066cc;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -188,9 +237,13 @@ if 'mensaje' not in st.session_state:
     st.session_state.mensaje = None
     st.session_state.tipo_mensaje = None
     st.session_state.ultima_actualizacion = datetime.now()
+    st.session_state.tab_activa = "monitor"
 
 # Configuración de auto-refresh (5 segundos)
 AUTO_REFRESH_SECONDS = 5
+
+# Constante para archivo de historial
+PNL_HISTORY_FILE = "pnl_history.csv"
 
 # Función para cargar configuración
 def cargar_configuracion():
@@ -295,6 +348,41 @@ def cerrar_posicion(symbol, position_amount):
     except Exception as e:
         return False, f"Error: {e}"
 
+# Función para cargar datos de historial
+@st.cache_data(ttl=300)  # Cachear por 5 minutos
+def cargar_datos_historial():
+    if not os.path.exists(PNL_HISTORY_FILE):
+        return pd.DataFrame()
+    
+    try:
+        df = pd.read_csv(PNL_HISTORY_FILE)
+        
+        # Convertir timestamp a datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+        # Convertir tiempo_abierto a timedelta cuando no es N/A
+        def parse_tiempo(t):
+            if t == 'N/A':
+                return pd.NaT
+            try:
+                parts = t.split(':')
+                if len(parts) == 3:
+                    h, m, s = map(int, parts)
+                    return timedelta(hours=h, minutes=m, seconds=s)
+                return pd.NaT
+            except:
+                return pd.NaT
+        
+        df['tiempo_abierto_td'] = df['tiempo_abierto'].apply(parse_tiempo)
+        
+        # Convertir pnl_real a float
+        df['pnl_real'] = pd.to_numeric(df['pnl_real'], errors='coerce')
+        
+        return df
+    except Exception as e:
+        print(f"Error al cargar datos de historial: {e}")
+        return pd.DataFrame()
+
 # Encabezado
 st.markdown("<h1>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
 
@@ -302,123 +390,300 @@ st.markdown("<h1>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
 ultima_act = st.session_state.ultima_actualizacion.strftime("%H:%M:%S")
 st.markdown(f"<p class='refresh-note'>Última actualización: {ultima_act}</p>", unsafe_allow_html=True)
 
-# Obtener datos de Hyperliquid
-datos = obtener_datos_hyperliquid()
-saldo = datos['saldo']
-posiciones = datos['posiciones']
+# Crear tabs para separar monitor y estadísticas
+tab1, tab2 = st.tabs(["📊 Monitor", "📈 Estadísticas"])
 
-# Información de tiempo activo
-tiempo_activo = "N/A"
-try:
-    if os.path.exists("tiempo_inicio_bot.txt"):
-        with open("tiempo_inicio_bot.txt", "r") as f:
-            inicio = datetime.fromisoformat(f.read().strip())
-            tiempo_activo = str(datetime.now() - inicio).split('.')[0]
-except Exception:
-    pass
-
-# Barra de estado
-saldo_texto = f"{saldo:.2f} USDT" if saldo is not None else "N/A USDT"
-st.markdown(
-    f"""
-    <div class="status-line">
-        <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
-        <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# Mostrar configuración desde config.py
-config = cargar_configuracion()
-st.markdown(
-    f"""
-    <div class="config-box">
-        <div class="config-item">🔧 Apalancamiento: <span class="config-value">{config['leverage']}×</span></div>
-        <div class="config-item">💵 Margen por trade: <span class="config-value">{config['margin_per_trade']} USDT</span></div>
-        <div class="config-item">📈 Take Profit: <span class="config-value">{config['atr_tp_mult']}×ATR</span></div>
-        <div class="config-item">🔒 TP Máx: <span class="config-value">{config['max_tp_pct']*100}%</span></div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# Mostrar mensajes si hay
-if st.session_state.mensaje:
-    msg_class = f"mensaje {'success' if st.session_state.tipo_mensaje == 'success' else 'error'}"
+# Tab 1: Monitor de trading
+with tab1:
+    # Obtener datos de Hyperliquid
+    datos = obtener_datos_hyperliquid()
+    saldo = datos['saldo']
+    posiciones = datos['posiciones']
+    
+    # Información de tiempo activo
+    tiempo_activo = "N/A"
+    try:
+        if os.path.exists("tiempo_inicio_bot.txt"):
+            with open("tiempo_inicio_bot.txt", "r") as f:
+                inicio = datetime.fromisoformat(f.read().strip())
+                tiempo_activo = str(datetime.now() - inicio).split('.')[0]
+    except Exception:
+        pass
+    
+    # Barra de estado
+    saldo_texto = f"{saldo:.2f} USDT" if saldo is not None else "N/A USDT"
     st.markdown(
-        f'<div class="{msg_class}">{st.session_state.mensaje}</div>',
+        f"""
+        <div class="status-line">
+            <div class="status-item">⏱️ Activo: <strong>{tiempo_activo}</strong></div>
+            <div class="status-item">💰 Saldo: <strong>{saldo_texto}</strong></div>
+        </div>
+        """,
         unsafe_allow_html=True
     )
-    st.session_state.mensaje = None
-    st.session_state.tipo_mensaje = None
-
-# Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
-st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
-
-if not posiciones:
-    st.info("🧙‍♂️ No hay operaciones abiertas.")
-else:
-    # Crear datos para la tabla
-    data = []
-    for pos in posiciones:
-        # Formatear PnL
-        pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
-        pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f}</span>"
-        
-        # Formatear liquidación
-        liq = "N/A"
-        if pos.get('liquidation_price'):
-            liq = f"{pos['liquidation_price']:.5f}"
+    
+    # Mostrar configuración desde config.py
+    config = cargar_configuracion()
+    st.markdown(
+        f"""
+        <div class="config-box">
+            <div class="config-item">🔧 Apalancamiento: <span class="config-value">{config['leverage']}×</span></div>
+            <div class="config-item">💵 Margen por trade: <span class="config-value">{config['margin_per_trade']} USDT</span></div>
+            <div class="config-item">📈 Take Profit: <span class="config-value">{config['atr_tp_mult']}×ATR</span></div>
+            <div class="config-item">🔒 TP Máx: <span class="config-value">{config['max_tp_pct']*100}%</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Mostrar mensajes si hay
+    if st.session_state.mensaje:
+        msg_class = f"mensaje {'success' if st.session_state.tipo_mensaje == 'success' else 'error'}"
+        st.markdown(
+            f'<div class="{msg_class}">{st.session_state.mensaje}</div>',
+            unsafe_allow_html=True
+        )
+        st.session_state.mensaje = None
+        st.session_state.tipo_mensaje = None
+    
+    # Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
+    st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
+    
+    if not posiciones:
+        st.info("🧙‍♂️ No hay operaciones abiertas.")
+    else:
+        # Crear datos para la tabla
+        data = []
+        for pos in posiciones:
+            # Formatear PnL
+            pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
+            pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f}</span>"
             
-        data.append({
-            "Símbolo": pos['symbol'],
-            "Dirección": pos['direction'],
-            "Tamaño": f"{pos['size']:.1f}",
-            "Precio Entrada": f"{pos['entryPrice']:.5f}",
-            "Liquidación": liq,
-            "PnL": pnl_formatted,
-        })
+            # Formatear liquidación
+            liq = "N/A"
+            if pos.get('liquidation_price'):
+                liq = f"{pos['liquidation_price']:.5f}"
+                
+            data.append({
+                "Símbolo": pos['symbol'],
+                "Dirección": pos['direction'],
+                "Tamaño": f"{pos['size']:.1f}",
+                "Precio Entrada": f"{pos['entryPrice']:.5f}",
+                "Liquidación": liq,
+                "PnL": pnl_formatted,
+            })
+        
+        # Convertir a DataFrame
+        df = pd.DataFrame(data)
+        
+        # Mostrar tabla
+        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        
+        # Botones para cerrar posiciones - Ahora con h3 consistente
+        st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
+        
+        # Crear dos columnas para mostrar botones en filas de a pares
+        num_columns = 2
+        cols = st.columns(num_columns)
+        
+        for i, pos in enumerate(posiciones):
+            col_index = i % num_columns
+            with cols[col_index]:
+                if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
+                    with st.spinner(f"Cerrando {pos['symbol']}..."):
+                        success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+                        st.session_state.mensaje = mensaje
+                        st.session_state.tipo_mensaje = "success" if success else "error"
+                        time.sleep(1)  # Pequeña pausa
+                        st.rerun()  # Correcto en versiones recientes de Streamlit
     
-    # Convertir a DataFrame
-    df = pd.DataFrame(data)
+    # Pares disponibles (simple) - Ahora con h3 consistente
+    st.markdown("<h3>Pares Disponibles</h3>", unsafe_allow_html=True)
+    simbolos = []
+    try:
+        if os.path.exists("simbolos_disponibles.txt"):
+            with open("simbolos_disponibles.txt", "r") as f:
+                simbolos = f.read().strip().split(",")
+    except Exception:
+        pass
     
-    # Mostrar tabla
-    st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-    
-    # Botones para cerrar posiciones - Ahora con h3 consistente
-    st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
-    
-    # Crear dos columnas para mostrar botones en filas de a pares
-    num_columns = 2
-    cols = st.columns(num_columns)
-    
-    for i, pos in enumerate(posiciones):
-        col_index = i % num_columns
-        with cols[col_index]:
-            if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
-                with st.spinner(f"Cerrando {pos['symbol']}..."):
-                    success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
-                    st.session_state.mensaje = mensaje
-                    st.session_state.tipo_mensaje = "success" if success else "error"
-                    time.sleep(1)  # Pequeña pausa
-                    st.rerun()  # Correcto en versiones recientes de Streamlit
+    if simbolos:
+        simbolos_html = "".join([f'<span class="symbol-badge">{s}</span>' for s in simbolos])
+        st.markdown(f'<div class="symbol-container">{simbolos_html}</div>', unsafe_allow_html=True)
+    else:
+        st.info("No hay pares disponibles.")
 
-# Pares disponibles (simple) - Ahora con h3 consistente
-st.markdown("<h3>Pares Disponibles</h3>", unsafe_allow_html=True)
-simbolos = []
-try:
-    if os.path.exists("simbolos_disponibles.txt"):
-        with open("simbolos_disponibles.txt", "r") as f:
-            simbolos = f.read().strip().split(",")
-except Exception:
-    pass
-
-if simbolos:
-    simbolos_html = "".join([f'<span class="symbol-badge">{s}</span>' for s in simbolos])
-    st.markdown(f'<div class="symbol-container">{simbolos_html}</div>', unsafe_allow_html=True)
-else:
-    st.info("No hay pares disponibles.")
+# Tab 2: Estadísticas
+with tab2:
+    # Cargar datos de historial
+    df = cargar_datos_historial()
+    
+    if df.empty:
+        st.warning("No hay datos de historial disponibles.")
+    else:
+        # Filtros
+        col1, col2, col3 = st.columns(3)
+        
+        # Filtro de fechas
+        with col1:
+            fecha_min = df['timestamp'].min().date()
+            fecha_max = df['timestamp'].max().date()
+            
+            fecha_inicio = st.date_input("Desde:", fecha_min, min_value=fecha_min, max_value=fecha_max)
+            fecha_fin = st.date_input("Hasta:", fecha_max, min_value=fecha_min, max_value=fecha_max)
+        
+        # Filtros de símbolo y dirección
+        with col2:
+            simbolos = ['Todos'] + sorted(df['symbol'].unique().tolist())
+            simbolo_seleccionado = st.selectbox("Símbolo:", simbolos)
+        
+        with col3:
+            direcciones = ['Todas', 'long', 'short']
+            direccion_seleccionada = st.selectbox("Dirección:", direcciones)
+        
+        # Aplicar filtros
+        df_filtrado = df.copy()
+        
+        # Filtro de fechas
+        df_filtrado = df_filtrado[(df_filtrado['timestamp'].dt.date >= fecha_inicio) & 
+                                 (df_filtrado['timestamp'].dt.date <= fecha_fin)]
+        
+        # Filtro de símbolo
+        if simbolo_seleccionado != 'Todos':
+            df_filtrado = df_filtrado[df_filtrado['symbol'] == simbolo_seleccionado]
+        
+        # Filtro de dirección
+        if direccion_seleccionada != 'Todas':
+            df_filtrado = df_filtrado[df_filtrado['direccion'] == direccion_seleccionada]
+        
+        # Métricas principales
+        total_trades = len(df_filtrado)
+        pnl_total = df_filtrado['pnl_real'].sum()
+        trades_ganadores = len(df_filtrado[df_filtrado['pnl_real'] > 0])
+        trades_perdedores = len(df_filtrado[df_filtrado['pnl_real'] < 0])
+        
+        winrate = (trades_ganadores / total_trades * 100) if total_trades > 0 else 0
+        
+        # Mostrar métricas
+        st.markdown(
+            f"""
+            <div class="metric-container">
+                <div class="metric">
+                    <div class="metric-title">Total Trades</div>
+                    <div class="metric-value">{total_trades}</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-title">PnL Total</div>
+                    <div class="metric-value {'positive' if pnl_total >= 0 else 'negative'}">{pnl_total:.2f} USDT</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-title">Winrate</div>
+                    <div class="metric-value {'positive' if winrate >= 50 else 'negative'}">{winrate:.1f}%</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-title">Ganadores/Perdedores</div>
+                    <div class="metric-value">{trades_ganadores}/{trades_perdedores}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Gráficos
+        st.markdown("<h3>Análisis de PnL</h3>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Gráfico de PnL acumulado
+            if not df_filtrado.empty:
+                df_acum = df_filtrado.sort_values('timestamp')
+                df_acum['pnl_acumulado'] = df_acum['pnl_real'].cumsum()
+                
+                fig_acum = plt.figure(figsize=(8, 4))
+                plt.plot(df_acum['timestamp'], df_acum['pnl_acumulado'], marker='o', markersize=3)
+                plt.grid(True, alpha=0.3)
+                plt.title('PnL Acumulado')
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig_acum)
+        
+        with col2:
+            # Distribución de PnL
+            fig_dist = plt.figure(figsize=(8, 4))
+            plt.hist(df_filtrado['pnl_real'], bins=20, color='skyblue', edgecolor='black')
+            plt.grid(True, alpha=0.3)
+            plt.title('Distribución de PnL')
+            plt.axvline(0, color='red', linestyle='--')
+            plt.tight_layout()
+            st.pyplot(fig_dist)
+        
+        # Análisis por símbolo
+        st.markdown("<h3>Análisis por Símbolo</h3>", unsafe_allow_html=True)
+        
+        # Agrupar por símbolo
+        if not df_filtrado.empty:
+            simbolo_stats = df_filtrado.groupby('symbol').agg(
+                trades=('symbol', 'count'),
+                pnl_total=('pnl_real', 'sum'),
+                pnl_medio=('pnl_real', 'mean'),
+                pnl_max=('pnl_real', 'max'),
+                pnl_min=('pnl_real', 'min'),
+                ganadores=('pnl_real', lambda x: (x > 0).sum()),
+                tiempo_medio=('tiempo_abierto_td', lambda x: x.mean())
+            ).reset_index()
+            
+            # Calcular winrate
+            simbolo_stats['winrate'] = (simbolo_stats['ganadores'] / simbolo_stats['trades']) * 100
+            
+            # Formatear tiempo medio
+            simbolo_stats['tiempo_medio_fmt'] = simbolo_stats['tiempo_medio'].apply(
+                lambda x: str(x).split('.')[0] if pd.notna(x) else 'N/A'
+            )
+            
+            # Mostrar tabla
+            simbolo_stats_display = simbolo_stats[['symbol', 'trades', 'pnl_total', 'pnl_medio', 'winrate', 'tiempo_medio_fmt']]
+            simbolo_stats_display.columns = ['Símbolo', 'Trades', 'PnL Total', 'PnL Medio', 'Winrate %', 'Tiempo Medio']
+            
+            # Formatear números
+            simbolo_stats_display['PnL Total'] = simbolo_stats_display['PnL Total'].apply(lambda x: f"{x:.2f}")
+            simbolo_stats_display['PnL Medio'] = simbolo_stats_display['PnL Medio'].apply(lambda x: f"{x:.2f}")
+            simbolo_stats_display['Winrate %'] = simbolo_stats_display['Winrate %'].apply(lambda x: f"{x:.1f}%")
+            
+            st.write(simbolo_stats_display.to_html(index=False, escape=False), unsafe_allow_html=True)
+            
+            # Gráfico de PnL por símbolo
+            fig_simbolos = plt.figure(figsize=(10, 5))
+            plt.bar(simbolo_stats['symbol'], simbolo_stats['pnl_total'])
+            plt.grid(True, alpha=0.3, axis='y')
+            plt.title('PnL Total por Símbolo')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig_simbolos)
+        
+        # Historial completo
+        st.markdown("<h3>Historial Detallado</h3>", unsafe_allow_html=True)
+        
+        if st.checkbox("Mostrar historial completo"):
+            # Preparar datos para mostrar
+            display_df = df_filtrado.copy()
+            display_df['timestamp'] = display_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Formatear PnL para colorearlo
+            def format_pnl(pnl):
+                pnl_class = 'profit' if float(pnl) > 0 else ('loss' if float(pnl) < 0 else '')
+                return f'<span class="{pnl_class}">{float(pnl):.2f}</span>'
+            
+            display_df['pnl_formatted'] = display_df['pnl_real'].apply(format_pnl)
+            
+            # Seleccionar y renombrar columnas
+            display_df = display_df[['timestamp', 'symbol', 'direccion', 'precio_entrada', 
+                                    'precio_salida', 'pnl_formatted', 'tiempo_abierto', 'razon_cierre']]
+            display_df.columns = ['Fecha/Hora', 'Símbolo', 'Dirección', 'Precio Entrada', 
+                                 'Precio Salida', 'PnL', 'Tiempo Abierto', 'Razón Cierre']
+            
+            # Mostrar tabla
+            st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
 
 # Mostrar mensaje de actualización
 st.markdown(f'<p class="refresh-note">Actualizando automáticamente cada {AUTO_REFRESH_SECONDS} segundos...</p>', unsafe_allow_html=True)
