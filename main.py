@@ -1210,3 +1210,75 @@ if __name__ == "__main__":
             now = datetime.now()
             if (now - ultimo_chequeo_huerfanas).total_seconds() > 3600:  # 3600 segundos = 1 hora
                 print("Verificando posiciones huérfanas...")
+                cerrar_posiciones_huerfanas()
+                ultimo_chequeo_huerfanas = now
+            
+            # --- Espera cooldown tras un trade abierto ---
+            if last_trade_time and (now - last_trade_time) < timedelta(minutes=COOLDOWN_MINUTES):
+                restante = timedelta(minutes=COOLDOWN_MINUTES) - (now - last_trade_time)
+                print(f"En cooldown tras última apertura. Esperando {restante} antes de poder abrir otro trade.")
+                time.sleep(intervalo_segundos)
+                continue
+
+            # --- Solo se permite una apertura nueva por ciclo ---
+            apertura_realizada = False
+            for simbolo in simbolos:
+                # Usar la nueva función para verificar posiciones existentes
+                ya_abierta = verificar_posicion_existente(simbolo, posiciones)
+                if ya_abierta:
+                    print(f"Ya existe una posición abierta para {simbolo}. Se omite.")
+                    continue
+                
+                if apertura_realizada:
+                    continue
+
+                print(f"\nEvaluando condiciones microestructura para {simbolo}...")
+                datos = obtener_datos_historicos(simbolo)
+                if datos is None:
+                    continue
+
+                precio_actual = obtener_precio_hyperliquid(simbolo)
+                if precio_actual is None:
+                    continue
+
+                # --- Detección de alta volatilidad ---
+                if detectar_volatilidad_extrema(datos):
+                    msg = f"🚨 Alta volatilidad detectada en {simbolo}: se suspende apertura de trades en este ciclo."
+                    print(msg)
+                    continue
+
+                # --- Filtro de spread ---
+                if not spread_aceptable(simbolo):
+                    print(f"[{simbolo}] Spread no aceptable. Se descarta trade.")
+                    continue
+
+                accion, razon, atr, entry_price = aplicar_condiciones_microestructura_v2(datos, precio_actual, simbolo)
+
+                if accion and atr is not None:
+                    if abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
+                        resumen_diario["trades_abiertos"] += 1
+                        apertura_realizada = True
+                        last_trade_time = datetime.now()
+                        break
+                else:
+                    print(f"[{simbolo}] No se abre trade. Razón: {razon}")
+
+            # Envío resumen diario si corresponde
+            if resumen_diario["ultimo_envio"] != datetime.now().date():
+                enviar_telegram(
+                    f"📊 Resumen diario:\n"
+                    f"Trades abiertos: {resumen_diario['trades_abiertos']}\n"
+                    f"Trades cerrados: {resumen_diario['trades_cerrados']}\n"
+                    f"PnL total: {resumen_diario['pnl_total']:.4f} USDT",
+                    tipo="daily"
+                )
+                resumen_diario["trades_abiertos"] = 0
+                resumen_diario["trades_cerrados"] = 0
+                resumen_diario["pnl_total"] = 0.0
+                resumen_diario["ultimo_envio"] = datetime.now().date()
+
+            print(f"\nEsperando {intervalo_segundos} segundos antes de la próxima evaluación...")
+            time.sleep(intervalo_segundos)
+    except Exception as e:
+        logging.error(f"Error crítico en el bucle principal: {e}", exc_info=True)
+        enviar_telegram(f"❗️ Error crítico en el bucle principal: {e}", tipo="error")
