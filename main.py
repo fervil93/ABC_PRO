@@ -74,7 +74,7 @@ PRECISION_POR_SIMBOLO = {
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
 TP_ORDERS_FILE = "tp_orders.json"
-PNL_HISTORY_FILE = "historial_pnl.json"  # Nuevo archivo para historial de PnL real
+PNL_HISTORY_FILE = "pnl_history.csv"  # Cambiado a CSV para mejor compatibilidad con pandas
 COOLDOWN_MINUTES = 5  # Reducido de 15 a 5 minutos
 SPREAD_MAX_PCT = 1
 MAX_RETRIES = 3
@@ -231,30 +231,26 @@ def ajustar_precision(valor, precision):
     return float(f"{valor:.{precision}f}") if precision > 0 else float(int(valor))
 
 # Función nueva para guardar historial de PnL real
-def guardar_historial_pnl(symbol, direccion, entry_price, exit_price, tp_price, pnl_real):
-    """Guarda el historial de PnL para análisis posterior"""
+def guardar_historial_pnl(symbol, direccion, entry_price, exit_price, tp_price, pnl_real, 
+                         tiempo_abierto=None, razon_cierre="normal"):
+    """Guarda el historial de PnL para análisis posterior en formato CSV"""
     try:
-        # Cargar historial existente o crear uno nuevo
-        historial = []
+        # Asegurarse de que el archivo existe con encabezados
+        if not os.path.exists(PNL_HISTORY_FILE):
+            with open(PNL_HISTORY_FILE, "w") as f:
+                f.write("timestamp,symbol,direccion,precio_entrada,precio_salida,tp,pnl_real,tiempo_abierto,razon_cierre\n")
         
-        if os.path.exists(PNL_HISTORY_FILE):
-            with open(PNL_HISTORY_FILE, "r") as f:
-                historial = json.load(f)
+        # Tiempo actual
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Agregar nuevo registro
-        historial.append({
-            "symbol": symbol,
-            "direccion": direccion,
-            "entry_price": entry_price,
-            "exit_price": exit_price,
-            "tp_price": tp_price,
-            "pnl_real": pnl_real,
-            "timestamp": datetime.now().isoformat()
-        })
+        # Si no se proporciona tiempo abierto, será N/A
+        tiempo_abierto = tiempo_abierto if tiempo_abierto else "N/A"
         
-        # Guardar historial actualizado
-        with open(PNL_HISTORY_FILE, "w") as f:
-            json.dump(historial, f, indent=2)
+        # Guardar en CSV
+        with open(PNL_HISTORY_FILE, "a") as f:
+            f.write(f"{timestamp},{symbol},{direccion},{entry_price},{exit_price},{tp_price or 0},{pnl_real},{tiempo_abierto},{razon_cierre}\n")
+        
+        print(f"[HISTORIAL] Trade {symbol} {direccion} guardado. PnL: {pnl_real}")
             
     except Exception as e:
         print(f"Error al guardar historial de PnL: {e}")
@@ -676,6 +672,9 @@ def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
             
         print(f"[{symbol}] Orden principal ejecutada: {orden_principal}")
         
+        # Registrar tiempo de apertura del trade
+        tiempo_apertura = datetime.now()
+        
         # Si se especifica precio TP, crear una orden límite para el TP
         orden_tp = None
         if tp_price is not None:
@@ -700,7 +699,8 @@ def ejecutar_orden_hyperliquid(symbol, side, quantity, tp_price=None):
                         "price": tp_price,
                         "size": quantity,
                         "side": tp_side,
-                        "created_at": datetime.now().isoformat()
+                        "created_at": datetime.now().isoformat(),
+                        "tiempo_apertura": tiempo_apertura.isoformat()  # Guardar tiempo de apertura
                     }
                     
                     guardar_ordenes_tp(tp_orders)
@@ -800,7 +800,21 @@ def cerrar_posicion(symbol, positionAmt):
     try:
         # Primero, guardar el PnL real antes de intentar cerrar
         pnl_real = None
+        tiempo_abierto = None
+        tiempo_apertura = None
+        
         try:
+            # Verificar si tenemos información de tiempo de apertura en las órdenes TP
+            tp_orders = cargar_ordenes_tp()
+            if symbol in tp_orders and "tiempo_apertura" in tp_orders[symbol]:
+                try:
+                    tiempo_apertura = datetime.fromisoformat(tp_orders[symbol]["tiempo_apertura"])
+                    tiempo_abierto = str(datetime.now() - tiempo_apertura).split('.')[0]  # formato HH:MM:SS
+                    print(f"[{symbol}] Tiempo abierto calculado: {tiempo_abierto}")
+                except Exception as e:
+                    print(f"[{symbol}] Error calculando tiempo abierto: {e}")
+            
+            # Obtener PnL real desde las posiciones
             posiciones = obtener_posiciones_hyperliquid()
             for pos in posiciones:
                 if pos.get('asset', '').upper() == symbol.upper():
@@ -988,8 +1002,17 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                 )
                 
                 # Guardar el historial para análisis posterior
-                guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, tp, pnl_real_final)
-                
+                guardar_historial_pnl(
+                    symbol, direccion, 
+                    entry_price or 0, 
+                    precio_actual, 
+                    tp_price, 
+                    pnl_real or 0, 
+                    tiempo_abierto,
+                    "tp_alcanzado" if tp_price and ((direccion == "long" and precio_actual >= tp_price) or 
+                                                   (direccion == "short" and precio_actual <= tp_price)) 
+                                  else "manual"
+                )
                 # Actualizar resumen diario
                 resumen_diario["trades_cerrados"] += 1
                 resumen_diario["pnl_total"] += pnl_real_final
