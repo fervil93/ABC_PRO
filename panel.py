@@ -706,13 +706,13 @@ with tab2:
             )
             
             # Mostrar tabla
-            simbolo_stats_display = simbolo_stats[['symbol', 'trades', 'pnl_total', 'pnl_medio', 'winrate', 'tiempo_medio_fmt']]
+            simbolo_stats_display = simbolo_stats[['symbol', 'trades', 'pnl_total', 'pnl_medio', 'winrate', 'tiempo_medio_fmt']].copy()
             simbolo_stats_display.columns = ['Símbolo', 'Trades', 'PnL Total', 'PnL Medio', 'Winrate %', 'Tiempo Medio']
             
-            # Formatear números
-            simbolo_stats_display['PnL Total'] = simbolo_stats_display['PnL Total'].apply(lambda x: f"{x:.2f}")
-            simbolo_stats_display['PnL Medio'] = simbolo_stats_display['PnL Medio'].apply(lambda x: f"{x:.2f}")
-            simbolo_stats_display['Winrate %'] = simbolo_stats_display['Winrate %'].apply(lambda x: f"{x:.1f}%")
+            # Formatear números - CORRECCIÓN AQUÍ
+            simbolo_stats_display.loc[:, 'Winrate %'] = simbolo_stats_display['Winrate %'].apply(lambda x: f"{x:.2f}%")
+            simbolo_stats_display.loc[:, 'PnL Total'] = simbolo_stats_display['PnL Total'].apply(lambda x: f"{x:.2f}")
+            simbolo_stats_display.loc[:, 'PnL Medio'] = simbolo_stats_display['PnL Medio'].apply(lambda x: f"{x:.2f}")
             
             st.write(simbolo_stats_display.to_html(index=False, escape=False), unsafe_allow_html=True)
             
