@@ -705,15 +705,22 @@ with tab2:
                 lambda x: str(x).split('.')[0] if pd.notna(x) else 'N/A'
             )
             
+            # Crear un nuevo DataFrame para mostrar (solución al problema de tipos)
+            display_data = []
+            for _, row in simbolo_stats.iterrows():
+                display_data.append({
+                    'Símbolo': row['symbol'],
+                    'Trades': row['trades'],
+                    'PnL Total': f"{row['pnl_total']:.2f}",
+                    'PnL Medio': f"{row['pnl_medio']:.2f}",
+                    'Winrate %': f"{row['winrate']:.2f}%",
+                    'Tiempo Medio': row['tiempo_medio_fmt']
+                })
+            
+            # Crear un nuevo DataFrame con las columnas formateadas
+            simbolo_stats_display = pd.DataFrame(display_data)
+            
             # Mostrar tabla
-            simbolo_stats_display = simbolo_stats[['symbol', 'trades', 'pnl_total', 'pnl_medio', 'winrate', 'tiempo_medio_fmt']].copy()
-            simbolo_stats_display.columns = ['Símbolo', 'Trades', 'PnL Total', 'PnL Medio', 'Winrate %', 'Tiempo Medio']
-            
-            # Formatear números - CORRECCIÓN AQUÍ
-            simbolo_stats_display.loc[:, 'Winrate %'] = simbolo_stats_display['Winrate %'].apply(lambda x: f"{x:.2f}%")
-            simbolo_stats_display.loc[:, 'PnL Total'] = simbolo_stats_display['PnL Total'].apply(lambda x: f"{x:.2f}")
-            simbolo_stats_display.loc[:, 'PnL Medio'] = simbolo_stats_display['PnL Medio'].apply(lambda x: f"{x:.2f}")
-            
             st.write(simbolo_stats_display.to_html(index=False, escape=False), unsafe_allow_html=True)
             
             # Gráfico de PnL por símbolo
