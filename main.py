@@ -30,22 +30,15 @@ ATR_SL_MULT = 1.0
 
 SPREAD_MAX_PCT_POR_SIMBOLO = {
     "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 1.5, "XRP": 2.0, "ADA": 1.5,
-    "DOGE": 1.5, "AVAX": 1.5, "LINK": 1.5, "MATIC": 1.5, "ARB": 1.5, "SUI": 1.5, 
-    "PEPE": 2.0, "OP": 1.5, "NEAR": 1.5, "DOT": 1.5, "ATOM": 1.5, "LTC": 1.5, 
-    "SHIB": 2.0, "UNI": 1.5
+    "DOGE": 1.5, "AVAX": 1.5, "LINK": 1.5, "MATIC": 1.5
 }
 MULTIPLICADOR_VOL_POR_SIMBOLO = {
-    "BTC": 1.5, "ETH": 1.5, "BNB": 1.5, "SOL": 1.2, "XRP": 1.2,     # Aumentado de 1.0/0.8 a 1.5/1.2
-    "ADA": 1.2, "DOGE": 1.2, "AVAX": 1.2, "LINK": 1.2, "MATIC": 1.2, # Aumentado de 0.8 a 1.2
-    "ARB": 1.2, "SUI": 1.2, "PEPE": 1.0, "OP": 1.2, "NEAR": 1.2,    # Aumentado de 0.8/0.7 a 1.2/1.0
-    "DOT": 1.2, "ATOM": 1.2, "LTC": 1.2, "SHIB": 1.0, "UNI": 1.2    # Aumentado de 0.8/0.7 a 1.2/1.0
+    "BTC": 1.5, "ETH": 1.5, "BNB": 1.5, "SOL": 1.2, "XRP": 1.2,
+    "ADA": 1.2, "DOGE": 1.2, "AVAX": 1.2, "LINK": 1.2, "MATIC": 1.2
 }
 BREAKOUT_ATR_MULT_POR_SIMBOLO = {
-    "BTC": 0.15, "ETH": 0.15, "BNB": 0.15, "SOL": 0.1, "XRP": 0.1,  # Aumentado de 0.1/0.05 a 0.15/0.1
-    "ADA": 0.1, "DOGE": 0.1, "AVAX": 0.1, "LINK": 0.1,              # Aumentado de 0.05 a 0.1
-    "MATIC": 0.1, "ARB": 0.1, "SUI": 0.1, "PEPE": 0.1, "OP": 0.1,   # Aumentado de 0.05 a 0.1
-    "NEAR": 0.1, "DOT": 0.1, "ATOM": 0.1, "LTC": 0.1, "SHIB": 0.1,  # Aumentado de 0.05 a 0.1
-    "UNI": 0.1                                                      # Aumentado de 0.05 a 0.1
+    "BTC": 0.15, "ETH": 0.15, "BNB": 0.15, "SOL": 0.1, "XRP": 0.1,
+    "ADA": 0.1, "DOGE": 0.1, "AVAX": 0.1, "LINK": 0.1, "MATIC": 0.1
 }
 
 # Definir la precisión para cada símbolo según las reglas de Hyperliquid
@@ -59,17 +52,7 @@ PRECISION_POR_SIMBOLO = {
     "DOGE": 0, # 1 DOGE
     "AVAX": 1, # 0.1 AVAX
     "LINK": 1, # 0.1 LINK
-    "MATIC": 0, # 1 MATIC
-    "ARB": 0,  # 1 ARB
-    "SUI": 0,  # 1 SUI
-    "PEPE": 0, # 1 PEPE
-    "OP": 0,   # 1 OP
-    "NEAR": 0, # 1 NEAR
-    "DOT": 1,  # 0.1 DOT
-    "ATOM": 1, # 0.1 ATOM
-    "LTC": 2,  # 0.01 LTC
-    "SHIB": 0, # 1 SHIB
-    "UNI": 1   # 0.1 UNI
+    "MATIC": 0 # 1 MATIC
 }
 
 ATR_LEVELS_FILE = "trade_levels_atr.json"
@@ -105,8 +88,7 @@ def obtener_simbolos_disponibles():
     """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
     # Lista ampliada de los 20 pares con mayor capitalización en Hyperliquid
     todos_simbolos = [
-        'BTC', 'ETH', 'SOL', 'BNB', 'DOGE', 'ARB', 'MATIC', 'SUI', 'PEPE', 'OP', 
-        'XRP', 'AVAX', 'LINK', 'NEAR', 'DOT', 'ADA', 'ATOM', 'LTC', 'SHIB', 'UNI'
+        'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'MATIC'
     ]
     
     print("Verificando disponibilidad de símbolos en Hyperliquid...")
