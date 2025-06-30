@@ -547,7 +547,11 @@ with tab1:
             data.append({
                 "Símbolo": symbol,
                 "Dirección": pos['direction'],
-                "Tamaño": f"{pos['size']:.1f}",
+                "Tamaño": (
+                    f"{pos['size']:.6f}" if symbol == "BTC"
+                    else f"{pos['size']:.4f}" if symbol in ("ETH", "BNB", "SOL", "AVAX", "LINK")
+                    else f"{pos['size']:.2f}"
+                ),
                 "Precio Entrada": f"{pos['entryPrice']:.5f}",
                 "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
