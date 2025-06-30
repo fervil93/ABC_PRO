@@ -525,9 +525,14 @@ with tab1:
     
     if not posiciones:
         st.info("🧙‍♂️ No hay operaciones abiertas.")
-    else:
+        else:
         # Crear datos para la tabla
         data = []
+        # Cargar tiempos de apertura desde tp_orders.json
+        tp_orders = {}
+        if os.path.exists("tp_orders.json"):
+            with open("tp_orders.json", "r") as f:
+                tp_orders = json.load(f)
         for pos in posiciones:
             symbol = pos['symbol']
             precio_actual = obtener_precio_actual(symbol)
@@ -543,6 +548,11 @@ with tab1:
             
             # Obtener nivel de TP
             tp_price = niveles_tp.get(symbol, "N/A")
+
+            # Obtener tiempo de apertura
+            tiempo_apertura = "N/A"
+            if symbol in tp_orders and "tiempo_apertura" in tp_orders[symbol]:
+                tiempo_apertura = tp_orders[symbol]["tiempo_apertura"]
             
             data.append({
                 "Símbolo": symbol,
@@ -556,6 +566,7 @@ with tab1:
                 "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
                 "PnL": pnl_formatted,
+                "Fecha/Hora Apertura": tiempo_apertura,
             })
         
         # Convertir a DataFrame
