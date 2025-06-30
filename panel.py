@@ -523,16 +523,16 @@ with tab1:
     # Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
     st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
     
-    if not posiciones:
+        if not posiciones:
         st.info("🧙‍♂️ No hay operaciones abiertas.")
-        else:
-        # Crear datos para la tabla
-        data = []
+    else:
         # Cargar tiempos de apertura desde tp_orders.json
         tp_orders = {}
         if os.path.exists("tp_orders.json"):
             with open("tp_orders.json", "r") as f:
                 tp_orders = json.load(f)
+        # Crear datos para la tabla
+        data = []
         for pos in posiciones:
             symbol = pos['symbol']
             precio_actual = obtener_precio_actual(symbol)
