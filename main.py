@@ -809,10 +809,13 @@ def cerrar_posicion(symbol, positionAmt):
             for pos in posiciones:
                 if pos.get('asset', '').upper() == symbol.upper():
                     pnl_real = float(pos.get('unrealizedPnl', 0))
-                    print(f"[{symbol}] PnL real capturado antes del cierre: {pnl_real}")
+                    entryPrice = float(pos.get('entryPrice', 0))
                     break
+            else:
+                entryPrice = 0
         except Exception as e:
             print(f"[{symbol}] Error obteniendo PnL real: {e}")
+            entryPrice = 0
 
         # Cancelar órdenes TP pendientes
         tp_orders = cargar_ordenes_tp()
@@ -829,6 +832,7 @@ def cerrar_posicion(symbol, positionAmt):
         position_float = float(positionAmt)
         quantity = abs(position_float)
         side = "sell" if position_float > 0 else "buy"
+        direccion = "BUY" if position_float > 0 else "SELL"
 
         print(f"[{symbol}] Cerrando posición: {side.upper()} {quantity} (posición original: {position_float})")
 
@@ -846,17 +850,7 @@ def cerrar_posicion(symbol, positionAmt):
                 # Verificar si realmente se cerró
                 if verificar_posicion_cerrada(symbol):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 1)")
-                    # Guardar historial de PnL con tiempo abierto
-                    entryPrice = None
-                    try:
-                        for pos in posiciones:
-                            if pos.get('asset', '').upper() == symbol.upper():
-                                entryPrice = float(pos.get('entryPrice', 0))
-                                break
-                    except Exception:
-                        entryPrice = 0
                     precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
-                    direccion = "BUY" if position_float > 0 else "SELL"
                     tp = None  # Puedes ajustar este valor si tienes el TP usado
                     guardar_historial_pnl(
                         symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
@@ -880,17 +874,7 @@ def cerrar_posicion(symbol, positionAmt):
                 time.sleep(3)
                 if verificar_posicion_cerrada(symbol):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 2)")
-                    # Guardar historial de PnL con tiempo abierto
-                    entryPrice = None
-                    try:
-                        for pos in posiciones:
-                            if pos.get('asset', '').upper() == symbol.upper():
-                                entryPrice = float(pos.get('entryPrice', 0))
-                                break
-                    except Exception:
-                        entryPrice = 0
                     precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
-                    direccion = "BUY" if position_float > 0 else "SELL"
                     tp = None
                     guardar_historial_pnl(
                         symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
@@ -928,16 +912,7 @@ def cerrar_posicion(symbol, positionAmt):
 
             if verificar_posicion_cerrada(symbol):
                 print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 3 - lotes)")
-                entryPrice = None
-                try:
-                    for pos in posiciones:
-                        if pos.get('asset', '').upper() == symbol.upper():
-                            entryPrice = float(pos.get('entryPrice', 0))
-                            break
-                except Exception:
-                    entryPrice = 0
                 precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
-                direccion = "BUY" if position_float > 0 else "SELL"
                 tp = None
                 guardar_historial_pnl(
                     symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
