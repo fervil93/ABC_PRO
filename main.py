@@ -998,13 +998,22 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                 )
                 
                 # Guardar el historial para análisis posterior
+                tp_orders = cargar_ordenes_tp()
+                tiempo_abierto = "N/A"
+                if symbol in tp_orders and "tiempo_apertura" in tp_orders[symbol]:
+                    try:
+                        tiempo_apertura = datetime.fromisoformat(tp_orders[symbol]["tiempo_apertura"])
+                        tiempo_abierto = str(datetime.now() - tiempo_apertura).split('.')[0]
+                    except Exception as e:
+                        print(f"[{symbol}] Error calculando tiempo abierto en cierre TP: {e}")
+                
                 guardar_historial_pnl(
                     symbol, direccion, 
-                    entryPrice,           # En vez de entry_price
+                    entryPrice,
                     precio_actual, 
-                    tp,                   # En vez de tp_price
-                    pnl_real_final,       # En vez de pnl_real
-                    None,                 # tiempo_abierto no está definido en esta función
+                    tp,
+                    pnl_real_final,
+                    tiempo_abierto,
                     "tp_alcanzado"
                 )
                 # Actualizar resumen diario
@@ -1124,7 +1133,16 @@ def cerrar_posiciones_huerfanas():
                         direccion = "BUY" if positionAmt > 0 else "SELL"
                         
                         # Guardar el historial para análisis posterior
-                        guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, None, pnl_real_final, None, "huerfana")
+                        tp_orders = cargar_ordenes_tp()
+                        tiempo_abierto = "N/A"
+                        if symbol in tp_orders and "tiempo_apertura" in tp_orders[symbol]:
+                            try:
+                                tiempo_apertura = datetime.fromisoformat(tp_orders[symbol]["tiempo_apertura"])
+                                tiempo_abierto = str(datetime.now() - tiempo_apertura).split('.')[0]
+                            except Exception as e:
+                                print(f"[{symbol}] Error calculando tiempo abierto en cierre huérfana: {e}")
+                        
+                        guardar_historial_pnl(symbol, direccion, entryPrice, precio_actual, None, pnl_real_final, tiempo_abierto, "huerfana")
 
                         enviar_telegram(
                             f"🟡 Trade HUÉRFANO CERRADO: {symbol} {direccion}\n"
