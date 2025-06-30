@@ -30,15 +30,15 @@ ATR_SL_MULT = 1.0
 
 SPREAD_MAX_PCT_POR_SIMBOLO = {
     "BTC": 1.0, "ETH": 1.0, "BNB": 1.0, "SOL": 1.5, "XRP": 2.0, "ADA": 1.5,
-    "DOGE": 1.5, "AVAX": 1.5, "LINK": 1.5, "MATIC": 1.5
+    "AVAX": 1.5, "LINK": 1.5, "MATIC": 1.5
 }
 MULTIPLICADOR_VOL_POR_SIMBOLO = {
     "BTC": 1.5, "ETH": 1.5, "BNB": 1.5, "SOL": 1.2, "XRP": 1.2,
-    "ADA": 1.2, "DOGE": 1.2, "AVAX": 1.2, "LINK": 1.2, "MATIC": 1.2
+    "ADA": 1.2, "AVAX": 1.2, "LINK": 1.2, "MATIC": 1.2
 }
 BREAKOUT_ATR_MULT_POR_SIMBOLO = {
     "BTC": 0.15, "ETH": 0.15, "BNB": 0.15, "SOL": 0.1, "XRP": 0.1,
-    "ADA": 0.1, "DOGE": 0.1, "AVAX": 0.1, "LINK": 0.1, "MATIC": 0.1
+    "ADA": 0.1, "AVAX": 0.1, "LINK": 0.1, "MATIC": 0.1
 }
 
 # Definir la precisión para cada símbolo según las reglas de Hyperliquid
@@ -49,7 +49,6 @@ PRECISION_POR_SIMBOLO = {
     "SOL": 1,  # 0.1 SOL
     "XRP": 0,  # 1 XRP
     "ADA": 0,  # 1 ADA
-    "DOGE": 0, # 1 DOGE
     "AVAX": 1, # 0.1 AVAX
     "LINK": 1, # 0.1 LINK
     "MATIC": 0 # 1 MATIC
@@ -88,7 +87,7 @@ def obtener_simbolos_disponibles():
     """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
     # Lista ampliada de los 20 pares con mayor capitalización en Hyperliquid
     todos_simbolos = [
-        'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'MATIC'
+        'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'AVAX', 'LINK', 'MATIC'
     ]
     
     print("Verificando disponibilidad de símbolos en Hyperliquid...")
