@@ -542,6 +542,7 @@ with tab1:
         for pos in posiciones:
             symbol = pos['symbol']
             precio_actual = obtener_precio_actual(symbol)
+            tp_price = niveles_tp.get(symbol, "N/A")
             # ...
             data.append({
                 "Símbolo": symbol,
