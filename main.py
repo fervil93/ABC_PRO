@@ -786,23 +786,25 @@ def cerrar_posicion(symbol, positionAmt):
     Con verificación mejorada y manejo de errores
     """
     try:
-        # Primero, guardar el PnL real antes de intentar cerrar
         pnl_real = None
-        tiempo_abierto = None
+        tiempo_abierto = "N/A"
         tiempo_apertura = None
-        
+
         try:
             # Verificar si tenemos información de tiempo de apertura en las órdenes TP
             tp_orders = cargar_ordenes_tp()
             if symbol in tp_orders and "tiempo_apertura" in tp_orders[symbol]:
                 try:
                     tiempo_apertura = datetime.fromisoformat(tp_orders[symbol]["tiempo_apertura"])
-                    tiempo_abierto = str(datetime.now() - tiempo_apertura).split('.')[0]  # formato HH:MM:SS
+                    tiempo_abierto = str(datetime.now() - tiempo_apertura).split('.')[0]  # Formato HH:MM:SS
                     print(f"[{symbol}] Tiempo abierto calculado: {tiempo_abierto}")
                 except Exception as e:
                     print(f"[{symbol}] Error calculando tiempo abierto: {e}")
-            
-            # Obtener PnL real desde las posiciones
+        except Exception as e:
+            print(f"[{symbol}] Error obteniendo tiempo de apertura: {e}")
+
+        # Obtener PnL real antes de intentar cerrar
+        try:
             posiciones = obtener_posiciones_hyperliquid()
             for pos in posiciones:
                 if pos.get('asset', '').upper() == symbol.upper():
@@ -811,10 +813,9 @@ def cerrar_posicion(symbol, positionAmt):
                     break
         except Exception as e:
             print(f"[{symbol}] Error obteniendo PnL real: {e}")
-        
-        # Primero cancelar órdenes TP pendientes
+
+        # Cancelar órdenes TP pendientes
         tp_orders = cargar_ordenes_tp()
-        
         if symbol in tp_orders and "order_id" in tp_orders[symbol] and tp_orders[symbol]["order_id"]:
             try:
                 client.cancel_order(symbol=symbol, order_id=tp_orders[symbol]["order_id"])
@@ -823,35 +824,44 @@ def cerrar_posicion(symbol, positionAmt):
                 guardar_ordenes_tp(tp_orders)
             except Exception as e:
                 print(f"[{symbol}] Error cancelando orden TP: {e}")
-        
+
         # Determinar dirección y cantidad
         position_float = float(positionAmt)
         quantity = abs(position_float)
-        
-        # Para cerrar posición necesitamos hacer lo opuesto
-        # Si positionAmt es positivo (LONG), entonces necesitamos SELL (side="sell")
-        # Si positionAmt es negativo (SHORT), entonces necesitamos BUY (side="buy")
         side = "sell" if position_float > 0 else "buy"
-        
+
         print(f"[{symbol}] Cerrando posición: {side.upper()} {quantity} (posición original: {position_float})")
-        
-        # MÉTODO 1: Usar create_order simple sin parámetros adicionales 
-        # (ajustado para tu versión de API)
+
+        # MÉTODO 1: Usar create_order simple
         try:
-            # Probando sin el parámetro 'type' que causaba error
             order = client.create_order(
                 symbol=symbol,
                 side=side,
                 size=quantity
             )
-            
             if order:
                 print(f"[{symbol}] Orden de cierre enviada exitosamente: {order}")
                 time.sleep(3)  # Esperar para que se procese
-                
+
                 # Verificar si realmente se cerró
                 if verificar_posicion_cerrada(symbol):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 1)")
+                    # Guardar historial de PnL con tiempo abierto
+                    entryPrice = None
+                    try:
+                        for pos in posiciones:
+                            if pos.get('asset', '').upper() == symbol.upper():
+                                entryPrice = float(pos.get('entryPrice', 0))
+                                break
+                    except Exception:
+                        entryPrice = 0
+                    precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
+                    direccion = "BUY" if position_float > 0 else "SELL"
+                    tp = None  # Puedes ajustar este valor si tienes el TP usado
+                    guardar_historial_pnl(
+                        symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
+                        tiempo_abierto, "cierre_manual"
+                    )
                     if pnl_real is not None:
                         return order, True, pnl_real
                     else:
@@ -860,19 +870,32 @@ def cerrar_posicion(symbol, positionAmt):
                     print(f"[{symbol}] Posición sigue abierta en intento 1: {quantity}")
         except Exception as e1:
             print(f"[{symbol}] Error en método 1: {e1}")
-            
+
         # MÉTODO 2: Intentar con exchange.market_close si está disponible
         try:
             is_buy = side.lower() == "buy"
             order = client.exchange.market_close(symbol, is_buy, quantity)
-            
             if order:
                 print(f"[{symbol}] Orden de cierre enviada (método 2): {order}")
-                time.sleep(3)  # Esperar para que se procese
-                
-                # Verificar si realmente se cerró
+                time.sleep(3)
                 if verificar_posicion_cerrada(symbol):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 2)")
+                    # Guardar historial de PnL con tiempo abierto
+                    entryPrice = None
+                    try:
+                        for pos in posiciones:
+                            if pos.get('asset', '').upper() == symbol.upper():
+                                entryPrice = float(pos.get('entryPrice', 0))
+                                break
+                    except Exception:
+                        entryPrice = 0
+                    precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
+                    direccion = "BUY" if position_float > 0 else "SELL"
+                    tp = None
+                    guardar_historial_pnl(
+                        symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
+                        tiempo_abierto, "cierre_manual"
+                    )
                     if pnl_real is not None:
                         return order, True, pnl_real
                     else:
@@ -881,35 +904,45 @@ def cerrar_posicion(symbol, positionAmt):
                     print(f"[{symbol}] Posición sigue abierta después de método 2")
         except Exception as e2:
             print(f"[{symbol}] Error en método 2: {e2}")
-            
+
         # MÉTODO 3: Intentar cerrando por lotes pequeños
         try:
             print(f"[{symbol}] Intentando cerrar en lotes pequeños...")
             is_buy = side.lower() == "buy"
-            
-            # Dividir la cantidad en 5 partes
             parte = quantity / 5.0
             for i in range(5):
                 try:
                     cantidad_parte = parte
-                    if i == 4:  # En el último lote, asegurarse de que cierre todo
-                        # Verificar cuánto queda por cerrar
+                    if i == 4:  # Último lote, asegurar que cierre todo
                         posicion_actual = obtener_posicion_actual(symbol)
                         if posicion_actual is not None and abs(posicion_actual) > 0.0001:
                             cantidad_parte = abs(posicion_actual)
                         else:
-                            break  # Ya está cerrada
-                    
+                            break
                     print(f"[{symbol}] Cerrando lote {i+1}/5: {cantidad_parte}")
                     order = client.exchange.market_close(symbol, is_buy, cantidad_parte)
                     print(f"[{symbol}] Respuesta lote {i+1}: {order}")
                     time.sleep(1.5)
                 except Exception as e:
                     print(f"[{symbol}] Error en lote {i+1}: {e}")
-            
-            # Verificar si se cerró finalmente
+
             if verificar_posicion_cerrada(symbol):
                 print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 3 - lotes)")
+                entryPrice = None
+                try:
+                    for pos in posiciones:
+                        if pos.get('asset', '').upper() == symbol.upper():
+                            entryPrice = float(pos.get('entryPrice', 0))
+                            break
+                except Exception:
+                    entryPrice = 0
+                precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
+                direccion = "BUY" if position_float > 0 else "SELL"
+                tp = None
+                guardar_historial_pnl(
+                    symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
+                    tiempo_abierto, "cierre_manual"
+                )
                 order_info = {"status": "ok", "method": "batch_close"}
                 if pnl_real is not None:
                     return order_info, True, pnl_real
@@ -917,7 +950,7 @@ def cerrar_posicion(symbol, positionAmt):
                     return order_info, True
         except Exception as e3:
             print(f"[{symbol}] Error en método 3: {e3}")
-        
+
         # Si llegamos aquí, todos los métodos fallaron
         print(f"[{symbol}] ❌ No se pudo cerrar la posición tras múltiples intentos")
         enviar_telegram(f"⚠️ No se pudo cerrar la posición para {symbol} tras múltiples intentos. Cierre manualmente.", tipo="error")
@@ -925,7 +958,7 @@ def cerrar_posicion(symbol, positionAmt):
             return None, False, pnl_real
         else:
             return None, False
-            
+
     except Exception as e:
         logging.error(f"Error al cerrar posición para {symbol}: {e}", exc_info=True)
         enviar_telegram(f"⚠️ Error al cerrar posición para {symbol}: {e}", tipo="error")
