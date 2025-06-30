@@ -341,12 +341,6 @@ def obtener_datos_hyperliquid():
             elif "marginSummary" in account and "accountValue" in account["marginSummary"]:
                 saldo = float(account["marginSummary"]["accountValue"])
         
-        # Cargar tiempos de apertura desde tp_orders.json
-        tp_orders = {}
-        if os.path.exists("tp_orders.json"):
-            with open("tp_orders.json", "r") as f:
-                tp_orders = json.load(f)
-        
         # Extraer posiciones
         posiciones = []
         if account and "assetPositions" in account:
@@ -379,11 +373,7 @@ def obtener_datos_hyperliquid():
                             liq_price = float(p['liquidationPx'])
                         except (ValueError, TypeError):
                             pass
-                    # Obtener tiempo_apertura
-                    tiempo_apertura = None
-                    if symbol in tp_orders and "tiempo_apertura" in tp_orders[symbol]:
-                        tiempo_apertura = tp_orders[symbol]["tiempo_apertura"]
-                    
+                            
                     # Añadir la posición formateada
                     posiciones.append({
                         'symbol': symbol,
@@ -392,8 +382,7 @@ def obtener_datos_hyperliquid():
                         'entryPrice': entry_price,
                         'unrealizedPnl': unrealized_pnl,
                         'liquidation_price': liq_price,
-                        'raw_position': position_size,
-                        'tiempo_apertura': tiempo_apertura
+                        'raw_position': position_size
                     })
                 except Exception as e:
                     print(f"Error procesando posición: {e}")
@@ -536,55 +525,61 @@ with tab1:
     
     if not posiciones:
         st.info("🧙‍♂️ No hay operaciones abiertas.")
-else:
-    # Crear datos para la tabla
-    data = []
-    for pos in posiciones:
-        symbol = pos['symbol']
-        precio_actual = obtener_precio_actual(symbol)
-        tp_price = niveles_tp.get(symbol, "N/A")
+    else:
+        # Crear datos para la tabla
+        data = []
+        for pos in posiciones:
+            symbol = pos['symbol']
+            precio_actual = obtener_precio_actual(symbol)
+            
+            # Formatear PnL
+            pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
+            pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f}</span>"
+            
+            # Formatear liquidación
+            liq = "N/A"
+            if pos.get('liquidation_price'):
+                liq = f"{pos['liquidation_price']:.5f}"
+            
+            # Obtener nivel de TP
+            tp_price = niveles_tp.get(symbol, "N/A")
+            
+            data.append({
+                "Símbolo": symbol,
+                "Dirección": pos['direction'],
+                "Tamaño": (
+                    f"{pos['size']:.6f}" if symbol == "BTC"
+                    else f"{pos['size']:.4f}" if symbol in ("ETH", "BNB", "SOL", "AVAX", "LINK")
+                    else f"{pos['size']:.2f}"
+                ),
+                "Precio Entrada": f"{pos['entryPrice']:.5f}",
+                "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
+                "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
+                "PnL": pnl_formatted,
+            })
         
-        # Formatear PnL
-        pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
-        pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f}</span>"
+        # Convertir a DataFrame
+        df = pd.DataFrame(data)
         
-        data.append({
-            "Símbolo": symbol,
-            "Dirección": pos['direction'],
-            "Tamaño": (
-                f"{pos['size']:.6f}" if symbol == "BTC"
-                else f"{pos['size']:.4f}" if symbol in ("ETH", "BNB", "SOL", "AVAX", "LINK")
-                else f"{pos['size']:.2f}"
-            ),
-            "Precio Entrada": f"{pos['entryPrice']:.5f}",
-            "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
-            "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
-            "PnL": pnl_formatted,
-            "Fecha/Hora Apertura": pos.get("tiempo_apertura", "N/A"),
-        })
+        # Mostrar tabla
+        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        
+        # Botones para cerrar posiciones en una sola fila
+        st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
 
-    # Convertir a DataFrame
-    df = pd.DataFrame(data)
-
-    # Mostrar tabla
-    st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-
-    # Botones para cerrar posiciones en una sola fila
-    st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
-
-    # Contenedor para poner botones en una fila
-    st.markdown('<div class="button-row">', unsafe_allow_html=True)
-    cols = st.columns(len(posiciones))  # Crear tantas columnas como posiciones haya
-    for i, (col, pos) in enumerate(zip(cols, posiciones)):
-        with col:
-            if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
-                with st.spinner(f"Cerrando {pos['symbol']}..."):
-                    success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
-                    st.session_state.mensaje = mensaje
-                    st.session_state.tipo_mensaje = "success" if success else "error"
-                    time.sleep(1)
-                    st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+        # Contenedor para poner botones en una fila
+        st.markdown('<div class="button-row">', unsafe_allow_html=True)
+        cols = st.columns(len(posiciones))  # Crear tantas columnas como posiciones haya
+        for i, (col, pos) in enumerate(zip(cols, posiciones)):
+            with col:
+                if st.button(f"Cerrar {pos['symbol']} ({pos['direction']})", key=f"btn_{pos['symbol']}"):
+                    with st.spinner(f"Cerrando {pos['symbol']}..."):
+                        success, mensaje = cerrar_posicion(pos['symbol'], pos['raw_position'])
+                        st.session_state.mensaje = mensaje
+                        st.session_state.tipo_mensaje = "success" if success else "error"
+                        time.sleep(1)
+                        st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Tab 2: Estadísticas
 with tab2:
