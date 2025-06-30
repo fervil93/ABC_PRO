@@ -536,7 +536,7 @@ with tab1:
     
     if not posiciones:
         st.info("🧙‍♂️ No hay operaciones abiertas.")
-    else:
+else:
     # Crear datos para la tabla
     data = []
     for pos in posiciones:
@@ -562,13 +562,13 @@ with tab1:
             "PnL": pnl_formatted,
             "Fecha/Hora Apertura": pos.get("tiempo_apertura", "N/A"),
         })
-        
+
     # Convertir a DataFrame
     df = pd.DataFrame(data)
-    
+
     # Mostrar tabla
     st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-    
+
     # Botones para cerrar posiciones en una sola fila
     st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
 
