@@ -1221,6 +1221,10 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                     return False
                 
                 # Si llegamos aquí, el cierre está confirmado
+                # IMPORTANTE: Activar cooldown tras cierre exitoso confirmado
+                last_trade_time = datetime.now()
+                print(f"[{symbol}] Cooldown activado tras cierre exitoso confirmado")
+                
                 icono_cerrado = "🟢" if pnl_real_final >= 0 else "🔴"
                 
                 # Usar el PnL real obtenido de la API
