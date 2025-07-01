@@ -133,6 +133,17 @@ st.markdown("""
         font-weight: 600;
     }
     
+    /* DCA badge */
+    .dca-badge {
+        background-color: #17a2b8;
+        color: white;
+        font-size: 0.75rem;
+        font-weight: bold;
+        border-radius: 10px;
+        padding: 2px 6px;
+        margin-left: 5px;
+    }
+    
     /* Mensaje centrado */
     .mensaje {
         padding: 10px;
@@ -261,16 +272,26 @@ PNL_HISTORY_FILE = "pnl_history.csv"
 # Archivos de niveles TP
 TP_ORDERS_FILE = "tp_orders.json"
 ATR_LEVELS_FILE = "trade_levels_atr.json"
+DCA_HISTORY_FILE = "dca_history.csv"
 
 # Función para cargar configuración
 def cargar_configuracion():
     try:
-        from config import LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
+        from config import (
+            LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT,
+            DCA_ENABLED, DCA_MAX_LOSS_PCT, DCA_MAX_ENTRIES, 
+            DCA_SIZE_MULTIPLIER, DCA_MIN_TIME_BETWEEN
+        )
         return {
             "leverage": LEVERAGE,
             "margin_per_trade": MARGIN_PER_TRADE,
             "atr_tp_mult": ATR_TP_MULT,
-            "max_tp_pct": MAX_TP_PCT
+            "max_tp_pct": MAX_TP_PCT,
+            "dca_enabled": DCA_ENABLED,
+            "dca_max_loss_pct": DCA_MAX_LOSS_PCT,
+            "dca_max_entries": DCA_MAX_ENTRIES,
+            "dca_size_multiplier": DCA_SIZE_MULTIPLIER,
+            "dca_min_time_between": DCA_MIN_TIME_BETWEEN
         }
     except Exception as e:
         print(f"Error al cargar configuración: {e}")
@@ -278,7 +299,12 @@ def cargar_configuracion():
             "leverage": 10,
             "margin_per_trade": 100,
             "atr_tp_mult": 1.2,
-            "max_tp_pct": 0.02
+            "max_tp_pct": 0.02,
+            "dca_enabled": False,
+            "dca_max_loss_pct": 0.05,
+            "dca_max_entries": 999,
+            "dca_size_multiplier": 1.0,
+            "dca_min_time_between": 1440
         }
 
 # Función para cargar símbolos disponibles
@@ -314,6 +340,29 @@ def cargar_niveles_tp():
         return niveles_tp
     except Exception as e:
         print(f"Error al cargar niveles TP: {e}")
+        return {}
+
+# Función para cargar información de DCA
+def cargar_info_dca():
+    try:
+        dca_info = {}
+        
+        # Cargar desde ATR_LEVELS_FILE para obtener info de DCA
+        if os.path.exists(ATR_LEVELS_FILE):
+            with open(ATR_LEVELS_FILE, "r") as f:
+                atr_levels = json.load(f)
+                for symbol, data in atr_levels.items():
+                    if "dca_info" in data:
+                        dca_info[symbol] = {
+                            "num_entradas": data["dca_info"].get("num_entradas", 0),
+                            "precio_promedio": data["dca_info"].get("precio_promedio", 0),
+                            "total_size": data["dca_info"].get("total_size", 0),
+                            "ultima_entrada": data["dca_info"].get("ultima_entrada", None)
+                        }
+                        
+        return dca_info
+    except Exception as e:
+        print(f"Error al cargar información DCA: {e}")
         return {}
 
 # Función para obtener el precio actual de un símbolo
@@ -507,6 +556,9 @@ with tab1:
     # Cargar niveles TP
     niveles_tp = cargar_niveles_tp()
     
+    # Cargar info DCA
+    dca_info = cargar_info_dca()
+    
     # Cargar tiempos de apertura
     tiempos_apertura = obtener_tiempos_apertura()
     
@@ -542,6 +594,8 @@ with tab1:
     
     # Mostrar configuración desde config.py
     config = cargar_configuracion()
+    
+    # Crear dos filas de configuración
     st.markdown(
         f"""
         <div class="config-box">
@@ -549,6 +603,12 @@ with tab1:
             <div class="config-item">💵 Margen por trade: <span class="config-value">{config['margin_per_trade']} USDT</span></div>
             <div class="config-item">📈 Take Profit: <span class="config-value">{config['atr_tp_mult']}×ATR</span></div>
             <div class="config-item">🔒 TP Máx: <span class="config-value">{config['max_tp_pct']*100}%</span></div>
+        </div>
+        <div class="config-box">
+            <div class="config-item">🔄 DCA: <span class="config-value">{'Activado' if config['dca_enabled'] else 'Desactivado'}</span></div>
+            <div class="config-item">📉 Pérdida DCA: <span class="config-value">{config['dca_max_loss_pct']*100}%</span></div>
+            <div class="config-item">🔢 Tamaño DCA: <span class="config-value">{config['dca_size_multiplier']}×</span></div>
+            <div class="config-item">⏰ Espera DCA: <span class="config-value">{config['dca_min_time_between']/60:.1f}h</span></div>
         </div>
         """,
         unsafe_allow_html=True
@@ -591,15 +651,26 @@ with tab1:
             # Obtener hora de apertura desde tp_orders.json
             hora_apertura = tiempos_apertura.get(symbol, "N/A")
             
+            # Añadir info de DCA si existe
+            dca_badge = ""
+            if symbol in dca_info and dca_info[symbol]["num_entradas"] > 0:
+                num_dca = dca_info[symbol]["num_entradas"]
+                dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
+                
+                # Si hay entradas DCA, usar el precio promedio 
+                entry_price_display = dca_info[symbol]["precio_promedio"]
+            else:
+                entry_price_display = pos['entryPrice']
+                
             data.append({
-                "Símbolo": symbol,
+                "Símbolo": f"{symbol} {dca_badge}",
                 "Dirección": pos['direction'],
                 "Tamaño": (
                     f"{pos['size']:.6f}" if symbol == "BTC"
                     else f"{pos['size']:.4f}" if symbol in ("ETH", "BNB", "SOL", "AVAX", "LINK")
                     else f"{pos['size']:.2f}"
                 ),
-                "Precio Entrada": f"{pos['entryPrice']:.5f}",
+                "Precio Entrada": f"{entry_price_display:.5f}",
                 "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
                 "Hora Apertura": hora_apertura,
@@ -867,6 +938,41 @@ with tab2:
             
             # Mostrar tabla
             st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        
+        # Agregar sección de historial DCA
+        if os.path.exists(DCA_HISTORY_FILE):
+            st.markdown("<h3>Historial de DCA</h3>", unsafe_allow_html=True)
+            
+            try:
+                df_dca = pd.read_csv(DCA_HISTORY_FILE, on_bad_lines='skip')
+                if not df_dca.empty:
+                    # Convertir timestamp
+                    df_dca['timestamp'] = pd.to_datetime(df_dca['timestamp'])
+                    
+                    # Filtrar por fecha
+                    df_dca_filtrado = df_dca[(df_dca['timestamp'].dt.date >= fecha_inicio) & 
+                                           (df_dca['timestamp'].dt.date <= fecha_fin)]
+                    
+                    # Filtrar por símbolo si está seleccionado
+                    if simbolo_seleccionado != 'Todos':
+                        df_dca_filtrado = df_dca_filtrado[df_dca_filtrado['symbol'] == simbolo_seleccionado]
+                    
+                    # Formatear para mostrar
+                    df_dca_display = df_dca_filtrado.copy()
+                    df_dca_display['timestamp'] = df_dca_display['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Renombrar columnas
+                    df_dca_display.columns = [
+                        'Fecha/Hora', 'Símbolo', 'Dirección', 'Precio Original', 'Precio DCA', 
+                        'Tamaño DCA', 'Precio Promedio', 'Nuevo TP', 'Entrada DCA #'
+                    ]
+                    
+                    if len(df_dca_display) > 0:
+                        st.write(df_dca_display.to_html(escape=False, index=False), unsafe_allow_html=True)
+                    else:
+                        st.info("No hay entradas DCA en el período seleccionado.")
+            except Exception as e:
+                st.error(f"Error al cargar historial DCA: {e}")
 
 # Mostrar mensaje de actualización
 st.markdown(f'<p class="refresh-note">Actualizando automáticamente cada {AUTO_REFRESH_SECONDS} segundos...</p>', unsafe_allow_html=True)
