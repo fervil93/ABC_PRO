@@ -1442,7 +1442,7 @@ if __name__ == "__main__":
                         saldo_usdt = float(account["marginSummary"]["accountValue"])
                     
                     if saldo_usdt is not None:
-                        print(f"[SALDO] Saldo actual: {saldo_usdt:.4f} USDT")
+                        print(f"Saldo actual: {saldo_usdt:.4f} USDT")
                         # Registra en archivo para que el panel lo pueda leer
                         with open("ultimo_saldo.txt", "w") as f:
                             f.write(f"{saldo_usdt}")
