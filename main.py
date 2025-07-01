@@ -227,7 +227,7 @@ def guardar_historial_pnl(symbol, direccion, entry_price, exit_price, tp_price, 
         # Si no se proporciona tiempo abierto, será N/A
         tiempo_abierto = tiempo_abierto if tiempo_abierto else "N/A"
         
-        # Guardar en CSV
+        # Guardar en CSV (sin comas extra al final)
         with open(PNL_HISTORY_FILE, "a") as f:
             f.write(f"{timestamp},{symbol},{direccion},{entry_price},{exit_price},{tp_price or 0},{pnl_real},{tiempo_abierto},{razon_cierre}\n")
         
@@ -852,10 +852,7 @@ def cerrar_posicion(symbol, positionAmt):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 1)")
                     precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
                     tp = None  # Puedes ajustar este valor si tienes el TP usado
-                    guardar_historial_pnl(
-                        symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
-                        tiempo_abierto, "cierre_manual"
-                    )
+                    # NO guardar historial aquí - Se guardará en evaluar_cierre_operacion_hyperliquid
                     if pnl_real is not None:
                         return order, True, pnl_real
                     else:
@@ -876,10 +873,7 @@ def cerrar_posicion(symbol, positionAmt):
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 2)")
                     precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
                     tp = None
-                    guardar_historial_pnl(
-                        symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
-                        tiempo_abierto, "cierre_manual"
-                    )
+                    # NO guardar historial aquí - Se guardará en evaluar_cierre_operacion_hyperliquid
                     if pnl_real is not None:
                         return order, True, pnl_real
                     else:
@@ -914,10 +908,7 @@ def cerrar_posicion(symbol, positionAmt):
                 print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 3 - lotes)")
                 precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
                 tp = None
-                guardar_historial_pnl(
-                    symbol, direccion, entryPrice, precio_actual, tp, pnl_real,
-                    tiempo_abierto, "cierre_manual"
-                )
+                # NO guardar historial aquí - Se guardará en evaluar_cierre_operacion_hyperliquid
                 order_info = {"status": "ok", "method": "batch_close"}
                 if pnl_real is not None:
                     return order_info, True, pnl_real
@@ -1007,6 +998,7 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
                     except Exception as e:
                         print(f"[{symbol}] Error calculando tiempo abierto en cierre TP: {e}")
                 
+                # AQUÍ ES DONDE SE DEBE GUARDAR EL HISTORIAL
                 guardar_historial_pnl(
                     symbol, direccion, 
                     entryPrice,
