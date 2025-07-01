@@ -8,7 +8,10 @@ import logging
 from datetime import datetime, timedelta
 
 from config import (
-    TIMEOUT_MINUTES, LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
+    TIMEOUT_MINUTES, LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT,
+    # Nuevos parámetros para DCA
+    DCA_ENABLED, DCA_MAX_LOSS_PCT, DCA_MAX_ENTRIES, DCA_SIZE_MULTIPLIER, 
+    DCA_MIN_TIME_BETWEEN, DCA_MAX_TOTAL_SIZE_MULT
 )
 from secret import WALLET_ADDRESS
 from notificaciones import enviar_telegram
