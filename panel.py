@@ -18,6 +18,16 @@ st.set_page_config(
 # Estilos CSS mejorados con texto centrado y títulos consistentes
 st.markdown("""
 <style>
+    /* DCA time badge */
+    .dca-time {
+        background-color: #6c757d;
+        color: white;
+        font-size: 0.7rem;
+        border-radius: 3px;
+        padding: 1px 3px;
+        margin-left: 3px;
+    }
+    
     /* Estilos generales y centrado */
     .block-container {
         padding-top: 1rem; 
@@ -514,7 +524,7 @@ def cargar_datos_historial():
         print(f"Error al cargar datos de historial: {e}")
         return pd.DataFrame()
 
-# Función para obtener tiempos de apertura de las posiciones actuales
+# Función para obtener tiempos de apertura y último DCA de las posiciones actuales
 def obtener_tiempos_apertura():
     try:
         tiempos = {}
@@ -523,14 +533,25 @@ def obtener_tiempos_apertura():
             with open(TP_ORDERS_FILE, "r") as f:
                 tp_orders = json.load(f)
                 for symbol, data in tp_orders.items():
+                    tiempos[symbol] = {"apertura": "N/A", "ultimo_dca": "N/A"}
+                    
+                    # Obtener tiempo apertura
                     if "tiempo_apertura" in data:
                         try:
                             tiempo_apertura = datetime.fromisoformat(data["tiempo_apertura"])
                             duracion = datetime.now() - tiempo_apertura
-                            tiempos[symbol] = str(duracion).split('.')[0]  # Formato HH:MM:SS
+                            tiempos[symbol]["apertura"] = str(duracion).split('.')[0]  # Formato HH:MM:SS
                         except Exception as e:
                             print(f"Error procesando tiempo apertura para {symbol}: {e}")
-                            tiempos[symbol] = "N/A"
+                    
+                    # Obtener tiempo último DCA
+                    if "ultimo_dca" in data:
+                        try:
+                            tiempo_dca = datetime.fromisoformat(data["ultimo_dca"])
+                            duracion_dca = datetime.now() - tiempo_dca
+                            tiempos[symbol]["ultimo_dca"] = str(duracion_dca).split('.')[0]  # Formato HH:MM:SS
+                        except Exception as e:
+                            print(f"Error procesando tiempo último DCA para {symbol}: {e}")
         return tiempos
     except Exception as e:
         print(f"Error cargando tiempos de apertura: {e}")
@@ -649,11 +670,15 @@ with tab1:
             tp_price = niveles_tp.get(symbol, "N/A")
             
             # Obtener hora de apertura desde tp_orders.json
-            hora_apertura = tiempos_apertura.get(symbol, "N/A")
+            tiempo_info = tiempos_apertura.get(symbol, {"apertura": "N/A", "ultimo_dca": "N/A"})
+            hora_apertura = tiempo_info["apertura"]
+            ultimo_dca = tiempo_info["ultimo_dca"]
             
             # Añadir info de DCA si existe
             dca_badge = ""
-            if symbol in dca_info and dca_info[symbol]["num_entradas"] > 0:
+            has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
+            
+            if has_dca:
                 num_dca = dca_info[symbol]["num_entradas"]
                 dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
                 
@@ -661,6 +686,12 @@ with tab1:
                 entry_price_display = dca_info[symbol]["precio_promedio"]
             else:
                 entry_price_display = pos['entryPrice']
+            
+            # Formatear columna de tiempo dependiendo si tiene DCA o no
+            if has_dca and ultimo_dca != "N/A":
+                tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
+            else:
+                tiempo_display = hora_apertura
                 
             data.append({
                 "Símbolo": f"{symbol} {dca_badge}",
@@ -673,7 +704,7 @@ with tab1:
                 "Precio Entrada": f"{entry_price_display:.5f}",
                 "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
-                "Hora Apertura": hora_apertura,
+                "Hora Apertura": tiempo_display,
                 "PnL": pnl_formatted,
             })
         
