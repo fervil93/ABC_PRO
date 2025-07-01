@@ -373,6 +373,15 @@ def obtener_datos_hyperliquid():
                             liq_price = float(p['liquidationPx'])
                         except (ValueError, TypeError):
                             pass
+                    
+                    # Obtener timestamp de apertura si está disponible
+                    open_timestamp = p.get('openTimestamp', None)
+                    open_time = None
+                    if open_timestamp:
+                        try:
+                            open_time = datetime.fromtimestamp(int(open_timestamp) / 1000)
+                        except (ValueError, TypeError):
+                            pass
                             
                     # Añadir la posición formateada
                     posiciones.append({
@@ -382,7 +391,8 @@ def obtener_datos_hyperliquid():
                         'entryPrice': entry_price,
                         'unrealizedPnl': unrealized_pnl,
                         'liquidation_price': liq_price,
-                        'raw_position': position_size
+                        'raw_position': position_size,
+                        'open_time': open_time
                     })
                 except Exception as e:
                     print(f"Error procesando posición: {e}")
@@ -418,14 +428,15 @@ def cargar_datos_historial():
         return pd.DataFrame()
     
     try:
-        df = pd.read_csv(PNL_HISTORY_FILE)
+        # Usar error_bad_lines=False (o en versiones nuevas on_bad_lines='skip') para saltar líneas con errores
+        df = pd.read_csv(PNL_HISTORY_FILE, on_bad_lines='skip')
         
         # Convertir timestamp a datetime
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         
         # Convertir tiempo_abierto a timedelta cuando no es N/A
         def parse_tiempo(t):
-            if t == 'N/A':
+            if pd.isna(t) or t == 'N/A':
                 return pd.NaT
             try:
                 parts = t.split(':')
@@ -436,10 +447,18 @@ def cargar_datos_historial():
             except:
                 return pd.NaT
         
-        df['tiempo_abierto_td'] = df['tiempo_abierto'].apply(parse_tiempo)
+        # Verificar si la columna existe antes de aplicar la función
+        if 'tiempo_abierto' in df.columns:
+            df['tiempo_abierto_td'] = df['tiempo_abierto'].apply(parse_tiempo)
+        else:
+            df['tiempo_abierto'] = 'N/A'
+            df['tiempo_abierto_td'] = pd.NaT
         
         # Convertir pnl_real a float
-        df['pnl_real'] = pd.to_numeric(df['pnl_real'], errors='coerce')
+        if 'pnl_real' in df.columns:
+            df['pnl_real'] = pd.to_numeric(df['pnl_real'], errors='coerce')
+        else:
+            df['pnl_real'] = 0.0
         
         return df
     except Exception as e:
@@ -544,6 +563,11 @@ with tab1:
             # Obtener nivel de TP
             tp_price = niveles_tp.get(symbol, "N/A")
             
+            # Formatear hora de apertura
+            open_time_str = "N/A"
+            if pos.get('open_time'):
+                open_time_str = pos['open_time'].strftime("%H:%M:%S")
+            
             data.append({
                 "Símbolo": symbol,
                 "Dirección": pos['direction'],
@@ -555,6 +579,7 @@ with tab1:
                 "Precio Entrada": f"{pos['entryPrice']:.5f}",
                 "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
+                "Hora Apertura": open_time_str,
                 "PnL": pnl_formatted,
             })
         
@@ -606,22 +631,26 @@ with tab2:
             simbolo_seleccionado = st.selectbox("Símbolo:", simbolos)
         
         with col3:
-            direcciones = ['Todas', 'BUY', 'SELL']
-            direccion_seleccionada = st.selectbox("Dirección:", direcciones)
+            # Verificar que la columna 'direccion' existe
+            if 'direccion' in df.columns:
+                direcciones = ['Todas'] + sorted(df['direccion'].unique().tolist())
+                direccion_seleccionada = st.selectbox("Dirección:", direcciones)
+            else:
+                direccion_seleccionada = 'Todas'
         
         # Aplicar filtros
         df_filtrado = df.copy()
         
         # Filtro de fechas
         df_filtrado = df_filtrado[(df_filtrado['timestamp'].dt.date >= fecha_inicio) & 
-                                 (df_filtrado['timestamp'].dt.date <= fecha_fin)]
+                                (df_filtrado['timestamp'].dt.date <= fecha_fin)]
         
         # Filtro de símbolo
         if simbolo_seleccionado != 'Todos':
             df_filtrado = df_filtrado[df_filtrado['symbol'] == simbolo_seleccionado]
         
         # Filtro de dirección
-        if direccion_seleccionada != 'Todas':
+        if direccion_seleccionada != 'Todas' and 'direccion' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['direccion'] == direccion_seleccionada]
         
         # Métricas principales
@@ -691,50 +720,64 @@ with tab2:
         
         # Agrupar por símbolo
         if not df_filtrado.empty:
-            simbolo_stats = df_filtrado.groupby('symbol').agg(
-                trades=('symbol', 'count'),
-                pnl_total=('pnl_real', 'sum'),
-                pnl_medio=('pnl_real', 'mean'),
-                pnl_max=('pnl_real', 'max'),
-                pnl_min=('pnl_real', 'min'),
-                ganadores=('pnl_real', lambda x: (x > 0).sum()),
-                tiempo_medio=('tiempo_abierto_td', lambda x: x.mean())
-            ).reset_index()
+            # Verificar que todas las columnas necesarias existen
+            required_cols = ['symbol', 'pnl_real', 'tiempo_abierto_td']
+            for col in required_cols:
+                if col not in df_filtrado.columns:
+                    if col == 'tiempo_abierto_td':
+                        df_filtrado['tiempo_abierto_td'] = pd.NaT
+                    elif col == 'pnl_real':
+                        df_filtrado['pnl_real'] = 0.0
+                    else:
+                        df_filtrado[col] = 'N/A'
             
-            # Calcular winrate
-            simbolo_stats['winrate'] = (simbolo_stats['ganadores'] / simbolo_stats['trades']) * 100
-            
-            # Formatear tiempo medio
-            simbolo_stats['tiempo_medio_fmt'] = simbolo_stats['tiempo_medio'].apply(
-                lambda x: str(x).split('.')[0] if pd.notna(x) else 'N/A'
-            )
-            
-            # Crear un nuevo DataFrame para mostrar (solución al problema de tipos)
-            display_data = []
-            for _, row in simbolo_stats.iterrows():
-                display_data.append({
-                    'Símbolo': row['symbol'],
-                    'Trades': row['trades'],
-                    'PnL Total': f"{row['pnl_total']:.2f}",
-                    'PnL Medio': f"{row['pnl_medio']:.2f}",
-                    'Winrate %': f"{row['winrate']:.2f}%",
-                    'Tiempo Medio': row['tiempo_medio_fmt']
-                })
-            
-            # Crear un nuevo DataFrame con las columnas formateadas
-            simbolo_stats_display = pd.DataFrame(display_data)
-            
-            # Mostrar tabla
-            st.write(simbolo_stats_display.to_html(index=False, escape=False), unsafe_allow_html=True)
-            
-            # Gráfico de PnL por símbolo
-            fig_simbolos = plt.figure(figsize=(10, 5))
-            plt.bar(simbolo_stats['symbol'], simbolo_stats['pnl_total'])
-            plt.grid(True, alpha=0.3, axis='y')
-            plt.title('PnL Total por Símbolo')
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            st.pyplot(fig_simbolos)
+            try:
+                simbolo_stats = df_filtrado.groupby('symbol').agg(
+                    trades=('symbol', 'count'),
+                    pnl_total=('pnl_real', 'sum'),
+                    pnl_medio=('pnl_real', 'mean'),
+                    pnl_max=('pnl_real', 'max'),
+                    pnl_min=('pnl_real', 'min'),
+                    ganadores=('pnl_real', lambda x: (x > 0).sum()),
+                    tiempo_medio=('tiempo_abierto_td', lambda x: x.mean())
+                ).reset_index()
+                
+                # Calcular winrate
+                simbolo_stats['winrate'] = (simbolo_stats['ganadores'] / simbolo_stats['trades']) * 100
+                
+                # Formatear tiempo medio
+                simbolo_stats['tiempo_medio_fmt'] = simbolo_stats['tiempo_medio'].apply(
+                    lambda x: str(x).split('.')[0] if pd.notna(x) else 'N/A'
+                )
+                
+                # Crear un nuevo DataFrame para mostrar (solución al problema de tipos)
+                display_data = []
+                for _, row in simbolo_stats.iterrows():
+                    display_data.append({
+                        'Símbolo': row['symbol'],
+                        'Trades': row['trades'],
+                        'PnL Total': f"{row['pnl_total']:.2f}",
+                        'PnL Medio': f"{row['pnl_medio']:.2f}",
+                        'Winrate %': f"{row['winrate']:.2f}%",
+                        'Tiempo Medio': row['tiempo_medio_fmt']
+                    })
+                
+                # Crear un nuevo DataFrame con las columnas formateadas
+                simbolo_stats_display = pd.DataFrame(display_data)
+                
+                # Mostrar tabla
+                st.write(simbolo_stats_display.to_html(index=False, escape=False), unsafe_allow_html=True)
+                
+                # Gráfico de PnL por símbolo
+                fig_simbolos = plt.figure(figsize=(10, 5))
+                plt.bar(simbolo_stats['symbol'], simbolo_stats['pnl_total'])
+                plt.grid(True, alpha=0.3, axis='y')
+                plt.title('PnL Total por Símbolo')
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig_simbolos)
+            except Exception as e:
+                st.error(f"Error al procesar estadísticas por símbolo: {e}")
         
         # Historial completo
         st.markdown("<h3>Historial Detallado</h3>", unsafe_allow_html=True)
@@ -742,24 +785,62 @@ with tab2:
         if st.checkbox("Mostrar historial completo"):
             # Preparar datos para mostrar
             display_df = df_filtrado.copy()
+            
+            # Asegurar que todas las columnas necesarias existen
+            required_display_cols = ['timestamp', 'symbol', 'direccion', 'precio_entrada', 
+                                    'precio_salida', 'pnl_real', 'tiempo_abierto', 'razon_cierre']
+            for col in required_display_cols:
+                if col not in display_df.columns:
+                    display_df[col] = 'N/A'
+            
+            # Formatear columnas
             display_df['timestamp'] = display_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
             
             # Formatear PnL para colorearlo
             def format_pnl(pnl):
-                pnl_class = 'profit' if float(pnl) > 0 else ('loss' if float(pnl) < 0 else '')
-                return f'<span class="{pnl_class}">{float(pnl):.2f}</span>'
+                try:
+                    pnl_num = float(pnl)
+                    pnl_class = 'profit' if pnl_num > 0 else ('loss' if pnl_num < 0 else '')
+                    return f'<span class="{pnl_class}">{pnl_num:.2f}</span>'
+                except:
+                    return 'N/A'
             
             display_df['pnl_formatted'] = display_df['pnl_real'].apply(format_pnl)
             
             # Formatear precios con menos decimales
-            display_df['precio_entrada'] = display_df['precio_entrada'].apply(lambda x: f"{float(x):.5f}")
-            display_df['precio_salida'] = display_df['precio_salida'].apply(lambda x: f"{float(x):.5f}")
+            def format_price(x):
+                try:
+                    return f"{float(x):.5f}"
+                except:
+                    return 'N/A'
+            
+            display_df['precio_entrada'] = display_df['precio_entrada'].apply(format_price)
+            display_df['precio_salida'] = display_df['precio_salida'].apply(format_price)
             
             # Seleccionar y renombrar columnas
-            display_df = display_df[['timestamp', 'symbol', 'direccion', 'precio_entrada', 
-                                    'precio_salida', 'pnl_formatted', 'tiempo_abierto', 'razon_cierre']]
-            display_df.columns = ['Fecha/Hora', 'Símbolo', 'Dirección', 'Precio Entrada', 
-                                 'Precio Salida', 'PnL', 'Tiempo Abierto', 'Razón Cierre']
+            display_cols = ['timestamp', 'symbol', 'direccion', 'precio_entrada', 
+                           'precio_salida', 'pnl_formatted', 'tiempo_abierto', 'razon_cierre']
+            
+            # Verificar que todas las columnas existen
+            display_cols = [col for col in display_cols if col in display_df.columns]
+            
+            display_df = display_df[display_cols]
+            
+            # Renombrar columnas
+            rename_map = {
+                'timestamp': 'Fecha/Hora',
+                'symbol': 'Símbolo',
+                'direccion': 'Dirección',
+                'precio_entrada': 'Precio Entrada',
+                'precio_salida': 'Precio Salida',
+                'pnl_formatted': 'PnL',
+                'tiempo_abierto': 'Tiempo Abierto',
+                'razon_cierre': 'Razón Cierre'
+            }
+            
+            # Solo renombrar columnas que existen
+            rename_map = {k: v for k, v in rename_map.items() if k in display_df.columns}
+            display_df.columns = [rename_map.get(col, col) for col in display_df.columns]
             
             # Mostrar tabla
             st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
