@@ -260,9 +260,9 @@ def guardar_historial_pnl(symbol, direccion, entry_price, exit_price, tp_price, 
         # Si no se proporciona tiempo abierto, será N/A
         tiempo_abierto = tiempo_abierto if tiempo_abierto else "N/A"
         
-        # Guardar en CSV (sin comas extra al final)
+        # Guardar en CSV (asegurarse de que haya un salto de línea al final)
         with open(PNL_HISTORY_FILE, "a") as f:
-            f.write(f"{timestamp},{symbol},{direccion},{entry_price},{exit_price},{tp_price or 0},{pnl_real},{tiempo_abierto},{razon_cierre}\n")
+            f.write(f"{timestamp},{symbol},{direccion},{entry_price},{exit_price},{tp_price or 0},{pnl_real},{tiempo_abierto},{razon_cierre}\n")  # Asegúrate de que termina con \n
         
         print(f"[HISTORIAL] Trade {symbol} {direccion} guardado. PnL: {pnl_real}")
             
