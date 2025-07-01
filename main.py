@@ -35,7 +35,8 @@ def crear_cliente_con_reintentos(tiempo_espera=10):
             cliente = HyperliquidClient()
             
             # Verificar que funciona con una llamada simple
-            info = cliente.get_meta()
+            # Usamos get_price("BTC") en lugar de get_meta()
+            info = cliente.get_price("BTC")
             print(f"Conexión con Hyperliquid establecida correctamente después de {intentos} intentos.")
             
             # Si llegamos aquí, el cliente se creó correctamente
