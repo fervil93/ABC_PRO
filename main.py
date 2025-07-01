@@ -6,8 +6,6 @@ import json
 import os
 import logging
 from datetime import datetime, timedelta
-from requests.exceptions import RequestException
-from hyperliquid_utils.error import ServerError
 
 from config import (
     TIMEOUT_MINUTES, LEVERAGE, MARGIN_PER_TRADE, ATR_TP_MULT, MAX_TP_PCT
@@ -25,38 +23,7 @@ logging.basicConfig(
 with open("tiempo_inicio_bot.txt", "w") as f:
     f.write(datetime.now().isoformat())
 
-# Nueva función para crear cliente con reintentos
-def crear_cliente_con_reintentos(tiempo_espera=10):
-    intentos = 0
-    
-    print("Iniciando conexión con Hyperliquid...")
-    
-    while True:  # Bucle infinito para reintentar siempre
-        try:
-            # Crear el cliente Hyperliquid
-            cliente = HyperliquidClient()
-            
-            # Verificar que funciona con una llamada simple
-            info = cliente.get_meta()
-            print(f"Conexión con Hyperliquid establecida correctamente después de {intentos} intentos.")
-            
-            # Si llegamos aquí, el cliente se creó correctamente
-            return cliente
-        
-        except (ServerError, RequestException, Exception) as e:
-            intentos += 1
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            print(f"[{timestamp}] Error al conectar con Hyperliquid (intento {intentos}): {e}")
-            print(f"Esperando {tiempo_espera} segundos antes de reintentar...")
-            time.sleep(tiempo_espera)
-            
-            # Mostrar un mensaje cada 6 intentos (cada minuto con espera de 10 seg)
-            if intentos % 6 == 0:
-                print(f"[{timestamp}] Continuando intentos de conexión con Hyperliquid... ({intentos} intentos hasta ahora)")
-
-# Reemplazar la creación del cliente con la nueva función
-client = crear_cliente_con_reintentos(tiempo_espera=10)  # Reintenta cada 10 segundos indefinidamente
+client = HyperliquidClient()
 
 ATR_SL_MULT = 1.0
 # MIN_POTENTIAL_PROFIT eliminado
@@ -260,9 +227,9 @@ def guardar_historial_pnl(symbol, direccion, entry_price, exit_price, tp_price, 
         # Si no se proporciona tiempo abierto, será N/A
         tiempo_abierto = tiempo_abierto if tiempo_abierto else "N/A"
         
-        # Guardar en CSV (asegurarse de que haya un salto de línea al final)
+        # Guardar en CSV (sin comas extra al final)
         with open(PNL_HISTORY_FILE, "a") as f:
-            f.write(f"{timestamp},{symbol},{direccion},{entry_price},{exit_price},{tp_price or 0},{pnl_real},{tiempo_abierto},{razon_cierre}\n")  # Asegúrate de que termina con \n
+            f.write(f"{timestamp},{symbol},{direccion},{entry_price},{exit_price},{tp_price or 0},{pnl_real},{tiempo_abierto},{razon_cierre}\n")
         
         print(f"[HISTORIAL] Trade {symbol} {direccion} guardado. PnL: {pnl_real}")
             
