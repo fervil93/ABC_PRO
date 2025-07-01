@@ -465,6 +465,28 @@ def cargar_datos_historial():
         print(f"Error al cargar datos de historial: {e}")
         return pd.DataFrame()
 
+# Función para obtener tiempos de apertura de las posiciones actuales
+def obtener_tiempos_apertura():
+    try:
+        tiempos = {}
+        # Cargar desde tp_orders.json
+        if os.path.exists(TP_ORDERS_FILE):
+            with open(TP_ORDERS_FILE, "r") as f:
+                tp_orders = json.load(f)
+                for symbol, data in tp_orders.items():
+                    if "tiempo_apertura" in data:
+                        try:
+                            tiempo_apertura = datetime.fromisoformat(data["tiempo_apertura"])
+                            duracion = datetime.now() - tiempo_apertura
+                            tiempos[symbol] = str(duracion).split('.')[0]  # Formato HH:MM:SS
+                        except Exception as e:
+                            print(f"Error procesando tiempo apertura para {symbol}: {e}")
+                            tiempos[symbol] = "N/A"
+        return tiempos
+    except Exception as e:
+        print(f"Error cargando tiempos de apertura: {e}")
+        return {}
+
 # Encabezado
 st.markdown("<h1>📊 Monitor Trading Hyperliquid</h1>", unsafe_allow_html=True)
 
@@ -484,6 +506,9 @@ with tab1:
     
     # Cargar niveles TP
     niveles_tp = cargar_niveles_tp()
+    
+    # Cargar tiempos de apertura
+    tiempos_apertura = obtener_tiempos_apertura()
     
     # Información de tiempo activo
     tiempo_activo = "N/A"
@@ -563,10 +588,8 @@ with tab1:
             # Obtener nivel de TP
             tp_price = niveles_tp.get(symbol, "N/A")
             
-            # Formatear hora de apertura
-            open_time_str = "N/A"
-            if pos.get('open_time'):
-                open_time_str = pos['open_time'].strftime("%H:%M:%S")
+            # Obtener hora de apertura desde tp_orders.json
+            hora_apertura = tiempos_apertura.get(symbol, "N/A")
             
             data.append({
                 "Símbolo": symbol,
@@ -579,7 +602,7 @@ with tab1:
                 "Precio Entrada": f"{pos['entryPrice']:.5f}",
                 "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
                 "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
-                "Hora Apertura": open_time_str,
+                "Hora Apertura": hora_apertura,
                 "PnL": pnl_formatted,
             })
         
