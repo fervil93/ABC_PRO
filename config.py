@@ -15,3 +15,11 @@ MAX_TP_PCT = 0.02
 
 # Endpoint de la API de testnet de Hyperliquid
 API_URL = "https://api.hyperliquid-testnet.xyz"
+
+# Configuración DCA
+DCA_ENABLED = True
+DCA_MAX_LOSS_PCT = 0.05      # Activar DCA cuando la pérdida alcance -5%
+DCA_MAX_ENTRIES = 999        # Sin límite práctico de entradas DCA
+DCA_SIZE_MULTIPLIER = 1.0    # Mismo tamaño que la entrada original
+DCA_MIN_TIME_BETWEEN = 1440  # 24 horas (1440 minutos) entre entradas DCA
+DCA_MAX_TOTAL_SIZE_MULT = 999.0  # Sin límite efectivo
