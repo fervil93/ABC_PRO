@@ -252,8 +252,8 @@ if 'mensaje' not in st.session_state:
     st.session_state.ultima_actualizacion = datetime.now()
     st.session_state.tab_activa = "monitor"
 
-# Configuración de auto-refresh (5 segundos)
-AUTO_REFRESH_SECONDS = 5
+# Configuración de auto-refresh (15 segundos)
+AUTO_REFRESH_SECONDS = 15
 
 # Constante para archivo de historial
 PNL_HISTORY_FILE = "pnl_history.csv"
