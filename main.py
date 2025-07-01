@@ -72,6 +72,14 @@ BREAKOUT_ATR_MULT_POR_SIMBOLO = {
     "ADA": 0.1, "AVAX": 0.1, "LINK": 0.1, "MATIC": 0.1
 }
 
+# Configuración DCA
+DCA_ENABLED = True
+DCA_MAX_LOSS_PCT = 0.05      # Activar DCA cuando la pérdida alcance -5%
+DCA_MAX_ENTRIES = 999        # Sin límite práctico de entradas DCA
+DCA_SIZE_MULTIPLIER = 1.0    # Mismo tamaño que la entrada original
+DCA_MIN_TIME_BETWEEN = 1440  # 24 horas (1440 minutos) entre entradas DCA
+DCA_MAX_TOTAL_SIZE_MULT = 999.0  # Sin límite efectivo
+
 # Definir la precisión para cada símbolo según las reglas de Hyperliquid
 PRECISION_POR_SIMBOLO = {
     "BTC": 3,  # 0.001 BTC
@@ -113,6 +121,198 @@ def debug_print(mensaje, *args):
             print(mensaje, *args)
         else:
             print(mensaje)
+
+def evaluar_dca(posiciones):
+    """Evalúa posiciones en negativo para aplicar estrategia DCA"""
+    if not DCA_ENABLED:
+        return
+        
+    niveles_atr = cargar_niveles_atr()
+    tp_orders = cargar_ordenes_tp()
+    
+    for pos in posiciones:
+        try:
+            symbol = pos['asset']
+            position_float = float(pos['position'])
+            direccion = "BUY" if position_float > 0 else "SELL"
+            entry_price = float(pos['entryPrice'])
+            pnl = float(pos.get('unrealizedPnl', 0))
+            
+            # Obtener información de la posición
+            precio_actual = obtener_precio_hyperliquid(symbol)
+            if precio_actual is None:
+                continue
+                
+            # Verificar si ya tiene entradas DCA
+            dca_info = niveles_atr.get(symbol, {}).get("dca_info", {})
+            num_dca = dca_info.get("num_entradas", 0)
+            
+            # Si ya alcanzó el máximo de entradas DCA, saltar
+            if num_dca >= DCA_MAX_ENTRIES:
+                continue
+                
+            # Verificar tiempo desde la última entrada DCA
+            ultima_dca = dca_info.get("ultima_entrada")
+            if ultima_dca:
+                tiempo_desde_ultima = datetime.now() - datetime.fromisoformat(ultima_dca)
+                if tiempo_desde_ultima.total_seconds() < DCA_MIN_TIME_BETWEEN * 60:
+                    # No ha pasado suficiente tiempo entre entradas DCA
+                    continue
+            
+            # Calcular pérdida porcentual
+            if direccion == "BUY":  # LONG
+                loss_pct = (precio_actual - entry_price) / entry_price
+            else:  # SHORT
+                loss_pct = (entry_price - precio_actual) / entry_price
+                
+            # Imprimir diagnóstico
+            print(f"[{symbol}] Evaluando DCA: Pérdida {loss_pct*100:.2f}%")
+                
+            # Verificar si cumple condiciones para DCA
+            if loss_pct <= -DCA_MAX_LOSS_PCT:
+                print(f"[{symbol}] ¡Condición DCA activada! Pérdida {loss_pct*100:.2f}% excede umbral {DCA_MAX_LOSS_PCT*100}%")
+                ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr)
+        
+        except Exception as e:
+            print(f"Error evaluando DCA para {pos.get('asset', 'desconocido')}: {e}")
+            logging.error(f"Error evaluando DCA: {e}", exc_info=True)
+
+def ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr):
+    """Ejecuta una entrada DCA y recalcula el TP"""
+    try:
+        # Obtener datos de la posición actual
+        position_size = abs(float(pos['position']))
+        entry_price = float(pos['entryPrice'])
+        
+        # Calcular tamaño para la entrada DCA - Mismo tamaño que la original
+        dca_size = position_size * DCA_SIZE_MULTIPLIER
+        
+        # Verificar tamaño total acumulado
+        dca_info = niveles_atr.get(symbol, {}).get("dca_info", {})
+        total_actual = position_size
+        if "total_size" in dca_info:
+            total_actual = dca_info["total_size"]
+        
+        # El límite es tan alto que nunca se alcanzará en la práctica
+        if (total_actual + dca_size) > (position_size * DCA_MAX_TOTAL_SIZE_MULT):
+            print(f"[{symbol}] Advertencia: Se alcanzó límite de tamaño máximo")
+            # Pero no limitamos el tamaño, seguimos con el valor original
+        
+        # Obtener ATR actual para recalcular TP
+        datos = obtener_datos_historicos(symbol)
+        if datos is None:
+            print(f"[{symbol}] No se pudo obtener datos para recalcular ATR")
+            return False
+            
+        # Calcular ATR
+        atr = calcular_atr(datos).iloc[-1]
+        
+        # Ejecutar orden DCA
+        side = "buy" if direccion == "BUY" else "sell"
+        orden = client.create_order(
+            symbol=symbol,
+            side=side,
+            size=dca_size,
+            leverage=LEVERAGE
+        )
+        
+        if not orden:
+            print(f"[{symbol}] Error ejecutando DCA")
+            return False
+            
+        # Recalcular precio promedio y nuevo TP
+        precio_promedio_anterior = dca_info.get("precio_promedio", entry_price)
+        total_size = total_actual + dca_size
+        
+        # Cálculo ponderado del nuevo precio promedio
+        if "total_size" in dca_info:
+            # Si ya tenemos un precio promedio anterior
+            precio_promedio = ((precio_promedio_anterior * total_actual) + (precio_actual * dca_size)) / total_size
+        else:
+            # Primera entrada DCA
+            precio_promedio = ((entry_price * position_size) + (precio_actual * dca_size)) / total_size
+        
+        # Calcular nuevo TP
+        nuevo_tp = calcular_tp_atr(precio_promedio, atr, direccion)
+        
+        # Actualizar información DCA
+        num_dca = dca_info.get("num_entradas", 0) + 1
+        
+        niveles_atr[symbol] = {
+            "tp_fijo": nuevo_tp,
+            "dca_info": {
+                "num_entradas": num_dca,
+                "ultima_entrada": datetime.now().isoformat(),
+                "precio_promedio": precio_promedio,
+                "total_size": total_size,
+                "entradas": dca_info.get("entradas", []) + [
+                    {"precio": precio_actual, "tamano": dca_size, "fecha": datetime.now().isoformat()}
+                ]
+            }
+        }
+        guardar_niveles_atr(niveles_atr)
+        
+        # Cancelar orden TP antigua si existe
+        tp_orders = cargar_ordenes_tp()
+        if symbol in tp_orders and "order_id" in tp_orders[symbol] and tp_orders[symbol]["order_id"]:
+            try:
+                client.cancel_order(symbol=symbol, order_id=tp_orders[symbol]["order_id"])
+                print(f"[{symbol}] Orden TP anterior cancelada")
+            except Exception as e:
+                print(f"[{symbol}] Error cancelando orden TP antigua: {e}")
+        
+        # Crear nueva orden TP
+        tp_side = "sell" if direccion == "BUY" else "buy"
+        tp_orden = crear_orden_tp_hyperliquid(symbol, tp_side, total_size, nuevo_tp)
+        
+        # Actualizar registro de órdenes TP
+        if tp_orden:
+            if symbol in tp_orders:
+                tiempo_apertura = tp_orders[symbol].get("tiempo_apertura", datetime.now().isoformat())
+            else:
+                tiempo_apertura = datetime.now().isoformat()
+                
+            tp_orders[symbol] = {
+                "order_id": tp_orden.get("order_id", ""),
+                "price": nuevo_tp,
+                "size": total_size,
+                "side": tp_side,
+                "created_at": datetime.now().isoformat(),
+                "tiempo_apertura": tiempo_apertura
+            }
+            guardar_ordenes_tp(tp_orders)
+        
+        # Registrar en historial
+        try:
+            # Asegurarse de que el archivo existe y tiene encabezados
+            if not os.path.exists("dca_history.csv"):
+                with open("dca_history.csv", "w") as f:
+                    f.write("timestamp,symbol,direccion,entry_original,precio_dca,tamano_dca,precio_promedio,nuevo_tp,num_dca\n")
+                    
+            # Añadir la nueva entrada DCA
+            with open("dca_history.csv", "a") as f:
+                f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},{symbol},{direccion},{entry_price},{precio_actual},{dca_size},{precio_promedio},{nuevo_tp},{num_dca}\n")
+        except Exception as e:
+            print(f"Error guardando historial DCA: {e}")
+        
+        # Notificar
+        mejora_porcentual = abs((precio_promedio - entry_price) / entry_price) * 100
+        
+        enviar_telegram(
+            f"🔄 DCA #{num_dca} aplicado en {symbol} {direccion}\n"
+            f"Entrada original: {position_size} @ {entry_price:.4f}\n"
+            f"Entrada DCA: {dca_size} @ {precio_actual:.4f}\n"
+            f"Nuevo precio promedio: {precio_promedio:.4f} (mejora {mejora_porcentual:.2f}%)\n"
+            f"Nuevo TP: {nuevo_tp:.4f}",
+            tipo="dca"
+        )
+        
+        return True
+        
+    except Exception as e:
+        print(f"[{symbol}] Error ejecutando DCA: {e}")
+        logging.error(f"Error ejecutando DCA para {symbol}: {e}", exc_info=True)
+        return False
 
 def obtener_simbolos_disponibles():
     """Obtiene la lista de símbolos disponibles en Hyperliquid ordenados por capitalización"""
@@ -1263,6 +1463,8 @@ if __name__ == "__main__":
                     if symbol in niveles_atr:
                         del niveles_atr[symbol]
                         guardar_niveles_atr(niveles_atr)
+            # NUEVO: Evaluar posiciones para DCA
+            evaluar_dca(posiciones)
             
             # Verificar posiciones huérfanas (sin TP registrado) cada hora
             now = datetime.now()
