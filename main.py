@@ -1079,6 +1079,9 @@ def cerrar_posicion(symbol, positionAmt):
 
                 # Verificar si realmente se cerró
                 if verificar_posicion_cerrada(symbol):
+                    # Activar cooldown tras cierre exitoso
+                    last_trade_time = datetime.now()
+                    print(f"[{symbol}] Cooldown activado tras cierre exitoso")
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 1)")
                     precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
                     tp = None  # Puedes ajustar este valor si tienes el TP usado
@@ -1100,6 +1103,9 @@ def cerrar_posicion(symbol, positionAmt):
                 print(f"[{symbol}] Orden de cierre enviada (método 2): {order}")
                 time.sleep(3)
                 if verificar_posicion_cerrada(symbol):
+                    # Activar cooldown tras cierre exitoso
+                    last_trade_time = datetime.now()
+                    print(f"[{symbol}] Cooldown activado tras cierre exitoso")
                     print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 2)")
                     precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
                     tp = None
@@ -1135,6 +1141,9 @@ def cerrar_posicion(symbol, positionAmt):
                     print(f"[{symbol}] Error en lote {i+1}: {e}")
 
             if verificar_posicion_cerrada(symbol):
+                # Activar cooldown tras cierre exitoso
+                last_trade_time = datetime.now()
+                print(f"[{symbol}] Cooldown activado tras cierre exitoso")
                 print(f"[{symbol}] ✓ Posición cerrada exitosamente (método 3 - lotes)")
                 precio_actual = obtener_precio_hyperliquid(symbol) or entryPrice
                 tp = None
@@ -1166,6 +1175,7 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
     Con mejor manejo de errores y verificación, además de PnL real
     """
     try:
+        global last_trade_time
         entryPrice = float(pos['entryPrice'])
         positionAmt = float(pos['position'])
         qty = abs(positionAmt)
@@ -1180,6 +1190,9 @@ def evaluar_cierre_operacion_hyperliquid(pos, precio_actual, niveles_atr):
         if niveles and "tp_fijo" in niveles:
             tp = niveles["tp_fijo"]
         else:
+            # Activar cooldown tras cierre exitoso
+            last_trade_time = datetime.now()
+            print(f"[{symbol}] Cooldown activado tras cierre exitoso")
             # Si no hay TP guardado, no hay criterio para cerrar manualmente
             return False
 
@@ -1318,6 +1331,8 @@ def cerrar_posiciones_huerfanas():
     Identifica y cierra posiciones 'huérfanas' que no tienen un TP registrado
     """
     try:
+        global last_trade_time
+        global last_trade_time
         # Obtener posiciones actuales y niveles ATR/TP
         posiciones = obtener_posiciones_hyperliquid()
         niveles_atr = cargar_niveles_atr()
@@ -1348,6 +1363,9 @@ def cerrar_posiciones_huerfanas():
                         pnl_real_final = unrealizedPnl  # Usar el PnL obtenido antes del cierre
                     
                     if order and cierre_confirmado:
+                        # Activar cooldown tras cierre exitoso de posición huérfana
+                        last_trade_time = datetime.now()
+                        print(f"[{symbol}] Cooldown activado tras cierre de posición huérfana")
                         precio_actual = obtener_precio_hyperliquid(symbol)
                         if precio_actual is None:
                             precio_actual = entryPrice  # Fallback
@@ -1380,6 +1398,8 @@ def cerrar_posiciones_huerfanas():
         print(f"Error verificando posiciones huérfanas: {e}")
         logging.error(f"Error verificando posiciones huérfanas: {e}", exc_info=True)
 
+last_trade_time = None
+
 if __name__ == "__main__":
     try:
         # Primero verificamos los símbolos disponibles
@@ -1394,7 +1414,6 @@ if __name__ == "__main__":
             
         intervalo_segundos = 10  # Aumentado a 10 segundos para reducir carga en API
         tiempo_inicio = datetime.now()
-        last_trade_time = None
         ultima_reevaluacion = datetime.now()
         ultimo_chequeo_huerfanas = datetime.now()
 
@@ -1475,7 +1494,7 @@ if __name__ == "__main__":
             # --- Espera cooldown tras un trade abierto ---
             if last_trade_time and (now - last_trade_time) < timedelta(minutes=COOLDOWN_MINUTES):
                 restante = timedelta(minutes=COOLDOWN_MINUTES) - (now - last_trade_time)
-                print(f"En cooldown tras última apertura. Esperando {restante} antes de poder abrir otro trade.")
+                print(f"En cooldown tras última operación. Esperando {restante} antes de poder abrir otro trade.")
                 time.sleep(intervalo_segundos)
                 continue
 
