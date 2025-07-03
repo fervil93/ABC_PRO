@@ -729,34 +729,50 @@ def calcular_cantidad_valida(symbol, monto_usdt):
     try:
         precio_actual = obtener_precio_hyperliquid(symbol)
         if precio_actual is None:
+            print(f"[{symbol}] No se pudo obtener precio actual")
             return None
             
         # Obtener la precisión adecuada para este símbolo
         precision = PRECISION_POR_SIMBOLO.get(symbol, 0)
         
-        # Calcular la cantidad base
+        # Calcular la cantidad base (Añadir log)
         cantidad_calculada = monto_usdt / precio_actual
+        print(f"[{symbol}] Monto USDT: {monto_usdt}, Precio actual: {precio_actual}")
+        print(f"[{symbol}] Cantidad calculada antes de ajustar precision: {cantidad_calculada}")
         
         # Para los tokens que requieren enteros (DOGE, ARB, etc.)
         if precision == 0:
             cantidad_redondeada = int(cantidad_calculada)
+            print(f"[{symbol}] Cantidad redondeada a entero: {cantidad_redondeada}")
             # Asegurarnos de que la cantidad no sea cero
             if cantidad_redondeada == 0:
                 cantidad_redondeada = 1
+                print(f"[{symbol}] Cantidad ajustada a mínimo 1 (entero)")
         else:
             # Para tokens que permiten decimales, redondeamos a la precisión adecuada
             cantidad_redondeada = round(cantidad_calculada, precision)
+            print(f"[{symbol}] Cantidad redondeada a precisión {precision}: {cantidad_redondeada}")
             # Asegurarnos de que la cantidad no sea cero
             if cantidad_redondeada == 0:
                 cantidad_redondeada = 10**(-precision)
+                print(f"[{symbol}] Cantidad ajustada a mínimo {10**(-precision)}")
         
         # Convertir a float para asegurar compatibilidad con la API
         cantidad_redondeada = float(cantidad_redondeada)
         
-        debug_print(f"[{symbol}] Cantidad calculada: {cantidad_calculada}, ajustada a precisión {precision}: {cantidad_redondeada}")
+        # Verificar si la cantidad es adecuada
+        valor_posicion = cantidad_redondeada * precio_actual
+        print(f"[{symbol}] Valor USD final de la posición: {valor_posicion:.2f} USD (esperado: ~{monto_usdt})")
+        
+        # Añadir una verificación adicional para el caso de SOL
+        if symbol == "SOL" and cantidad_redondeada < 1.0:
+            print(f"[SOL] ADVERTENCIA: La cantidad calculada es muy baja ({cantidad_redondeada}), se usará 6.6")
+            cantidad_redondeada = 6.6  # Valor fijo para SOL como prueba
+        
         return cantidad_redondeada
         
     except Exception as e:
+        print(f"[{symbol}] Error en calcular_cantidad_valida: {e}")
         logging.error(f"Error al calcular cantidad válida para {symbol}: {e}", exc_info=True)
         return None
 
@@ -1298,16 +1314,31 @@ def abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
     """Abre una posición con Take Profit automático en el exchange"""
     if tiene_saldo_suficiente(MARGIN_PER_TRADE):
         monto_usdt = LEVERAGE * MARGIN_PER_TRADE
+        print(f"[{simbolo}] Calculando tamaño para monto: {monto_usdt} USDT (LEVERAGE={LEVERAGE}, MARGIN_PER_TRADE={MARGIN_PER_TRADE})")
+        
         cantidad_valida = calcular_cantidad_valida(simbolo, monto_usdt)
+        print(f"[{simbolo}] Tamaño calculado final: {cantidad_valida}")
         
         if cantidad_valida:
             # Calcular precio de TP según ATR
             tp = calcular_tp_atr(entry_price, atr, accion)
             
+            print(f"[{simbolo}] Ejecutando orden con tamaño: {cantidad_valida}, precio: {entry_price}, TP: {tp}")
+            
             # Ejecutar la orden con TP incluido
             orden_principal, orden_tp = ejecutar_orden_hyperliquid(simbolo, accion, cantidad_valida, tp)
             
             if orden_principal:
+                # Intentar extraer el tamaño real ejecutado
+                tamaño_real = None
+                if isinstance(orden_principal, dict) and "size" in orden_principal:
+                    tamaño_real = orden_principal["size"]
+                elif isinstance(orden_principal, dict) and "szi" in orden_principal:
+                    tamaño_real = orden_principal["szi"]
+                
+                if tamaño_real:
+                    print(f"[{simbolo}] Tamaño real ejecutado: {tamaño_real} (diferente del solicitado: {cantidad_valida})")
+                
                 print(f"[{simbolo}] Trade ejecutado ({accion}) | ATR: {atr:.4f} | TP: {tp:.4f}")
                 
                 # Guardar niveles solo como respaldo
@@ -1323,7 +1354,8 @@ def abrir_posicion_con_tp(simbolo, accion, entry_price, atr):
                     f"Precio: {entry_price:.4f}\n"
                     f"{tp_msg}\n"
                     f"ATR: {atr:.4f}\n"
-                    f"Leverage: {LEVERAGE}x | Margen: {MARGIN_PER_TRADE} USDT",
+                    f"Leverage: {LEVERAGE}x | Margen: {MARGIN_PER_TRADE} USDT\n"
+                    f"Tamaño: {cantidad_valida}",
                     tipo="open"
                 )
                 
