@@ -696,12 +696,27 @@ with tab1:
                 except Exception as e:
                     print(f"Error procesando leverage para {symbol}: {e}")
             
+            # Inicializar entry_price_display siempre primero
+            entry_price_display = pos['entryPrice']
+            
+            # Añadir info de DCA si existe
+            dca_badge = ""
+            has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
+            
+            if has_dca:
+                num_dca = dca_info[symbol]["num_entradas"]
+                dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
+                
+                # Si hay entradas DCA, usar el precio promedio 
+                if "precio_promedio" in dca_info[symbol] and dca_info[symbol]["precio_promedio"]:
+                    entry_price_display = dca_info[symbol]["precio_promedio"]
+            
             # Formatear PnL
             pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
             
             # Calcular el PNL en porcentaje
             pnl_percentage = 0
-            if pos['entryPrice'] > 0:
+            if entry_price_display > 0 and precio_actual:
                 if pos['direction'] == "LONG":
                     pnl_percentage = ((precio_actual / entry_price_display) - 1) * 100
                 else:  # SHORT
@@ -723,27 +738,12 @@ with tab1:
             hora_apertura = tiempo_info["apertura"]
             ultimo_dca = tiempo_info["ultimo_dca"]
             
-            # Añadir info de DCA si existe
-            dca_badge = ""
-            has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
-            
-            # Inicializar entry_price_display siempre primero
-            entry_price_display = pos['entryPrice']
-            
-            if has_dca:
-                num_dca = dca_info[symbol]["num_entradas"]
-                dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
-                
-                # Si hay entradas DCA, usar el precio promedio 
-                if "precio_promedio" in dca_info[symbol] and dca_info[symbol]["precio_promedio"]:
-                    entry_price_display = dca_info[symbol]["precio_promedio"]
-                    
             # Formatear columna de tiempo dependiendo si tiene DCA o no
             if has_dca and ultimo_dca != "N/A":
                 tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
             else:
                 tiempo_display = hora_apertura
-                      
+                  
             data.append({
                 "Símbolo": f"{symbol} {dca_badge}",
                 "Leverage": leverage_display,  # NUEVO
