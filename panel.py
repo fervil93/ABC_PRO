@@ -702,6 +702,17 @@ with tab1:
             # Añadir info de DCA si existe
             dca_badge = ""
             has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
+
+            # Código de depuración para AVAX y ADA
+            if has_dca and symbol in ["AVAX", "ADA"]:
+                print(f"\n----- DEBUG - {symbol} -----")
+                print(f"Tamaño mostrado: {pos['size']}")
+                print(f"Precio entrada mostrado: {pos['entryPrice']}")
+                print(f"Total size en DCA info: {dca_info[symbol].get('total_size', 'No disponible')}")
+                print(f"Precio promedio en DCA info: {dca_info[symbol].get('precio_promedio', 'No disponible')}")
+                print(f"Cálculo manual: {pos['size'] * pos['entryPrice']:.2f}")
+                print(f"Cálculo con DCA: {dca_info[symbol].get('total_size', 0) * dca_info[symbol].get('precio_promedio', 0):.2f}")
+                print("----------------------\n")
             
             # Calcular valor de la posición (usando precio de entrada en lugar de precio actual)
             position_value = "N/A"
