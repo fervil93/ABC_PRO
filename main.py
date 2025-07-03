@@ -183,16 +183,22 @@ def ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr):
         entry_price = float(pos['entryPrice'])
         
         # Calcular tamaño para la entrada DCA - Mismo tamaño que la original
-        dca_size = position_size * DCA_SIZE_MULTIPLIER
+        # IMPORTANTE: Vamos a usar el tamaño de la posición ORIGINAL, no el acumulado actual
+        dca_info = niveles_atr.get(symbol, {}).get("dca_info", {})
+        
+        # Si es el primer DCA, el tamaño original es el actual
+        original_size = dca_info.get("original_size", position_size)
+        
+        # Calcular el tamaño del DCA basado en el tamaño ORIGINAL
+        dca_size = original_size * DCA_SIZE_MULTIPLIER
         
         # Verificar tamaño total acumulado
-        dca_info = niveles_atr.get(symbol, {}).get("dca_info", {})
         total_actual = position_size
         if "total_size" in dca_info:
             total_actual = dca_info["total_size"]
         
         # El límite es tan alto que nunca se alcanzará en la práctica
-        if (total_actual + dca_size) > (position_size * DCA_MAX_TOTAL_SIZE_MULT):
+        if (total_actual + dca_size) > (original_size * DCA_MAX_TOTAL_SIZE_MULT):
             print(f"[{symbol}] Advertencia: Se alcanzó límite de tamaño máximo")
             # Pero no limitamos el tamaño, seguimos con el valor original
         
@@ -243,6 +249,7 @@ def ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr):
                 "ultima_entrada": datetime.now().isoformat(),
                 "precio_promedio": precio_promedio,
                 "total_size": total_size,
+                "original_size": original_size,  # NUEVO: Guardar el tamaño original
                 "entradas": dca_info.get("entradas", []) + [
                     {"precio": precio_actual, "tamano": dca_size, "fecha": datetime.now().isoformat()}
                 ]
