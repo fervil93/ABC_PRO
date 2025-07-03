@@ -702,30 +702,12 @@ with tab1:
             # Añadir info de DCA si existe
             dca_badge = ""
             has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
-
-            # Código de depuración para AVAX y ADA
-            if has_dca and symbol in ["AVAX", "ADA"]:
-                print(f"\n----- DEBUG - {symbol} -----")
-                print(f"Tamaño mostrado: {pos['size']}")
-                print(f"Precio entrada mostrado: {pos['entryPrice']}")
-                print(f"Total size en DCA info: {dca_info[symbol].get('total_size', 'No disponible')}")
-                print(f"Precio promedio en DCA info: {dca_info[symbol].get('precio_promedio', 'No disponible')}")
-                print(f"Cálculo manual: {pos['size'] * pos['entryPrice']:.2f}")
-                print(f"Cálculo con DCA: {dca_info[symbol].get('total_size', 0) * dca_info[symbol].get('precio_promedio', 0):.2f}")
-                print("----------------------\n")
-            
-            # Calcular valor de la posición (usando precio de entrada en lugar de precio actual)
-            position_value = "N/A"
-            if has_dca and "total_size" in dca_info[symbol] and "precio_promedio" in dca_info[symbol]:
-                # Usar el tamaño total y precio promedio después de DCAs si está disponible
-                position_value = dca_info[symbol]["total_size"] * dca_info[symbol]["precio_promedio"]
-            else:
-                # Usar el tamaño y precio de entrada actual de la posición
-                position_value = pos['size'] * pos['entryPrice']
+        
+            # Calcular valor de la posición (usando SIEMPRE tamaño y precio de entrada mostrados en la tabla)
+            position_value = pos['size'] * pos['entryPrice']
             
             # Formatear con 2 decimales
-            if position_value != "N/A":
-                position_value = f"{position_value:.2f}"
+            position_value = f"{position_value:.2f}"
             
             if has_dca:
                 num_dca = dca_info[symbol]["num_entradas"]
