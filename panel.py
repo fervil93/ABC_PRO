@@ -697,14 +697,20 @@ with tab1:
             dca_badge = ""
             has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
             
+            # Inicializar entry_price_display siempre primero
+            entry_price_display = pos['entryPrice']
+            
             if has_dca:
                 num_dca = dca_info[symbol]["num_entradas"]
                 dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
                 
                 # Si hay entradas DCA, usar el precio promedio 
-                entry_price_display = dca_info[symbol]["precio_promedio"]
-            else:
-                entry_price_display = pos['entryPrice']  # AQUÍ ESTÁ EL PROBLEMA
+                if "precio_promedio" in dca_info[symbol] and dca_info[symbol]["precio_promedio"]:
+                    entry_price_display = dca_info[symbol]["precio_promedio"]
+                    
+            # Formatear columna de tiempo dependiendo si tiene DCA o no
+            if has_dca and ultimo_dca != "N/A":
+                tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
             else:
                 tiempo_display = hora_apertura
             
