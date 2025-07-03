@@ -698,7 +698,17 @@ with tab1:
             
             # Formatear PnL
             pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
-            pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f}</span>"
+            
+            # Calcular el PNL en porcentaje
+            pnl_percentage = 0
+            if pos['entryPrice'] > 0:
+                if pos['direction'] == "LONG":
+                    pnl_percentage = ((precio_actual / entry_price_display) - 1) * 100
+                else:  # SHORT
+                    pnl_percentage = ((entry_price_display / precio_actual) - 1) * 100
+            
+            # Formatear PnL en dólares y porcentaje
+            pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f} ({pnl_percentage:.2f}%)</span>"
             
             # Formatear liquidación
             liq = "N/A"
