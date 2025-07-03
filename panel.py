@@ -424,6 +424,13 @@ def obtener_datos_hyperliquid():
                     entry_price = float(p.get('entryPx', 0))
                     unrealized_pnl = float(p.get('unrealizedPnl', 0))
                     direction = "LONG" if position_size > 0 else "SHORT"
+
+                    # Extraer apalancamiento si existe ('lev' o 'leverage')
+                    leverage = None
+                    for lev_key in ['lev', 'leverage']:
+                        if lev_key in p:
+                            leverage = p[lev_key]
+                            break
                     
                     # Si hay datos de liquidación y TP en la API, usarlos
                     liq_price = None
@@ -451,7 +458,8 @@ def obtener_datos_hyperliquid():
                         'unrealizedPnl': unrealized_pnl,
                         'liquidation_price': liq_price,
                         'raw_position': position_size,
-                        'open_time': open_time
+                        'open_time': open_time,
+                        'leverage': leverage  # <-- NUEVO
                     })
                 except Exception as e:
                     print(f"Error procesando posición: {e}")
@@ -722,6 +730,7 @@ with tab1:
                 
             data.append({
                 "Símbolo": f"{symbol} {dca_badge}",
+                "Leverage": f"{pos.get('leverage', config['leverage'])}x",  # NUEVO
                 "Dirección": pos['direction'],
                 "Tamaño": (
                     f"{pos['size']:.6f}" if symbol == "BTC"
