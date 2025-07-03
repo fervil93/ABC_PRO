@@ -427,10 +427,8 @@ def obtener_datos_hyperliquid():
 
                     # Extraer apalancamiento si existe ('lev' o 'leverage')
                     leverage = None
-                    for lev_key in ['lev', 'leverage']:
-                        if lev_key in p:
-                            leverage = p[lev_key]
-                            break
+                    if 'leverage' in p:
+                        leverage = p.get('leverage')
                     
                     # Si hay datos de liquidación y TP en la API, usarlos
                     liq_price = None
@@ -459,7 +457,7 @@ def obtener_datos_hyperliquid():
                         'liquidation_price': liq_price,
                         'raw_position': position_size,
                         'open_time': open_time,
-                        'leverage': leverage  # <-- NUEVO
+                        'leverage': leverage  # AÑADE ESTA LÍNEA
                     })
                 except Exception as e:
                     print(f"Error procesando posición: {e}")
@@ -683,6 +681,20 @@ with tab1:
         for pos in posiciones:
             symbol = pos['symbol']
             precio_actual = obtener_precio_actual(symbol)
+
+            # Formatear leverage
+            leverage_display = "N/A"
+            if 'leverage' in pos and pos['leverage'] is not None:
+                try:
+                    # Si es un diccionario con 'type' y 'value'
+                    if isinstance(pos['leverage'], dict) and 'value' in pos['leverage']:
+                        leverage_value = pos['leverage']['value']
+                        leverage_display = f"{leverage_value}x"
+                    # Si es un valor numérico directo
+                    elif isinstance(pos['leverage'], (int, float, str)):
+                        leverage_display = f"{pos['leverage']}x"
+                except Exception as e:
+                    print(f"Error procesando leverage para {symbol}: {e}")
             
             # Formatear PnL
             pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
