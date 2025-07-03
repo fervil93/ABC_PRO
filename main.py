@@ -160,14 +160,13 @@ def evaluar_dca(posiciones):
             else:  # SHORT
                 loss_pct = (entry_price - precio_actual) / entry_price
                 
-            # NUEVO: Calcular umbral de pérdida progresivo
-            # Aumenta en 5% adicional por cada DCA ya realizado
-            umbral_loss_pct = DCA_MAX_LOSS_PCT + (num_dca * 0.05)
+            # MODIFICADO: Usar siempre el mismo umbral de pérdida (5%) sin importar el número de DCAs previos
+            umbral_loss_pct = DCA_MAX_LOSS_PCT
             
             # Imprimir diagnóstico
-            print(f"[{symbol}] Evaluando DCA: Pérdida {loss_pct*100:.2f}%, Umbral actual: {umbral_loss_pct*100:.2f}%")
+            print(f"[{symbol}] Evaluando DCA: Pérdida {loss_pct*100:.2f}%, Umbral fijo: {umbral_loss_pct*100:.2f}%")
                 
-            # Verificar si cumple condiciones para DCA con umbral progresivo
+            # Verificar si cumple condiciones para DCA con umbral fijo
             if loss_pct <= -umbral_loss_pct:
                 print(f"[{symbol}] ¡Condición DCA activada! Pérdida {loss_pct*100:.2f}% excede umbral {umbral_loss_pct*100:.2f}%")
                 ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr)
