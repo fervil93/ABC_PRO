@@ -703,17 +703,17 @@ with tab1:
             dca_badge = ""
             has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
             
-            # Calcular valor de la posición
+            # Calcular valor de la posición (usando precio de entrada en lugar de precio actual)
             position_value = "N/A"
-            if precio_actual:
-                if has_dca and "total_size" in dca_info[symbol]:
-                    # Usar el tamaño total después de DCAs si está disponible
-                    position_value = dca_info[symbol]["total_size"] * precio_actual
-                else:
-                    # Usar el tamaño actual de la posición
-                    position_value = pos['size'] * precio_actual
-                
-                # Formatear con 2 decimales
+            if has_dca and "total_size" in dca_info[symbol] and "precio_promedio" in dca_info[symbol]:
+                # Usar el tamaño total y precio promedio después de DCAs si está disponible
+                position_value = dca_info[symbol]["total_size"] * dca_info[symbol]["precio_promedio"]
+            else:
+                # Usar el tamaño y precio de entrada actual de la posición
+                position_value = pos['size'] * pos['entryPrice']
+            
+            # Formatear con 2 decimales
+            if position_value != "N/A":
                 position_value = f"{position_value:.2f}"
             
             if has_dca:
