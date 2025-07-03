@@ -266,7 +266,7 @@ def ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr):
         
         # Actualizar registro de órdenes TP
         if tp_orden:
-            # Obtener tiempo de apertura original si existe, si no usar la hora actual
+            # MODIFICACIÓN IMPORTANTE: Obtener tiempo de apertura original si existe, si no usar la hora actual
             if symbol in tp_orders:
                 tiempo_apertura_original = tp_orders[symbol].get("tiempo_apertura", datetime.now().isoformat())
             else:
@@ -278,7 +278,7 @@ def ejecutar_dca(symbol, direccion, pos, precio_actual, niveles_atr):
                 "size": total_size,
                 "side": tp_side,
                 "created_at": datetime.now().isoformat(),
-                "tiempo_apertura": tiempo_apertura_original,  # Mantener el tiempo original
+                "tiempo_apertura": tiempo_apertura_original,  # CONSERVAR el tiempo original
                 "ultimo_dca": datetime.now().isoformat()  # Añadir el tiempo del último DCA
             }
             guardar_ordenes_tp(tp_orders)
