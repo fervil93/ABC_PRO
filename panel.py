@@ -526,6 +526,10 @@ def cargar_datos_historial():
 
 # Función para obtener tiempos de apertura y último DCA de las posiciones actuales
 def obtener_tiempos_apertura():
+    """
+    Obtiene los tiempos de apertura y último DCA de las posiciones actuales.
+    Corrige el problema de mostrar el mismo tiempo para apertura y DCA.
+    """
     try:
         tiempos = {}
         # Cargar desde tp_orders.json
@@ -544,12 +548,27 @@ def obtener_tiempos_apertura():
                         except Exception as e:
                             print(f"Error procesando tiempo apertura para {symbol}: {e}")
                     
-                    # Obtener tiempo último DCA
+                    # Obtener tiempo último DCA si existe y es diferente al de apertura
                     if "ultimo_dca" in data:
                         try:
                             tiempo_dca = datetime.fromisoformat(data["ultimo_dca"])
-                            duracion_dca = datetime.now() - tiempo_dca
-                            tiempos[symbol]["ultimo_dca"] = str(duracion_dca).split('.')[0]  # Formato HH:MM:SS
+                            
+                            # Verificar si hay tiempo de apertura para comparar
+                            if "tiempo_apertura" in data:
+                                tiempo_apertura = datetime.fromisoformat(data["tiempo_apertura"])
+                                diferencia_segundos = abs((tiempo_dca - tiempo_apertura).total_seconds())
+                                
+                                # Solo mostrar el tiempo de DCA si realmente es diferente (más de 60 segundos)
+                                if diferencia_segundos > 60:
+                                    duracion_dca = datetime.now() - tiempo_dca
+                                    tiempos[symbol]["ultimo_dca"] = str(duracion_dca).split('.')[0]
+                                else:
+                                    # Si son prácticamente iguales, marcar como N/A para evitar duplicación
+                                    tiempos[symbol]["ultimo_dca"] = "N/A"
+                            else:
+                                # Si no hay tiempo de apertura para comparar, mostrar el tiempo del DCA
+                                duracion_dca = datetime.now() - tiempo_dca
+                                tiempos[symbol]["ultimo_dca"] = str(duracion_dca).split('.')[0]
                         except Exception as e:
                             print(f"Error procesando tiempo último DCA para {symbol}: {e}")
         return tiempos
@@ -678,14 +697,16 @@ with tab1:
             dca_badge = ""
             has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
             
+            # Formatear columna de tiempo dependiendo si tiene DCA o no
             if has_dca:
-                num_dca = dca_info[symbol]["num_entradas"]
-                dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
-                
-                # Si hay entradas DCA, usar el precio promedio 
-                entry_price_display = dca_info[symbol]["precio_promedio"]
+                # Si tiene DCA pero el tiempo es el mismo que apertura o es N/A, no mostrarlo
+                if ultimo_dca == "N/A" or ultimo_dca == hora_apertura:
+                    tiempo_display = hora_apertura
+                else:
+                    # Mostrar ambos tiempos solo si son diferentes
+                    tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
             else:
-                entry_price_display = pos['entryPrice']
+                tiempo_display = hora_apertura
             
             # Formatear columna de tiempo dependiendo si tiene DCA o no
             if has_dca and ultimo_dca != "N/A":
