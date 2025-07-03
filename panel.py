@@ -733,16 +733,10 @@ with tab1:
                 tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
             else:
                 tiempo_display = hora_apertura
-            
-            # Formatear columna de tiempo dependiendo si tiene DCA o no
-            if has_dca and ultimo_dca != "N/A":
-                tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
-            else:
-                tiempo_display = hora_apertura
-                
+                      
             data.append({
                 "Símbolo": f"{symbol} {dca_badge}",
-                "Leverage": f"{pos.get('leverage', config['leverage'])}x",  # NUEVO
+                "Leverage": leverage_display,  # NUEVO
                 "Dirección": pos['direction'],
                 "Tamaño": (
                     f"{pos['size']:.6f}" if symbol == "BTC"
