@@ -670,101 +670,115 @@ with tab1:
         st.session_state.mensaje = None
         st.session_state.tipo_mensaje = None
     
-    # Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
-    st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
-    
-    if not posiciones:
-        st.info("🧙‍♂️ No hay operaciones abiertas.")
-    else:
-        # Crear datos para la tabla
-        data = []
-        for pos in posiciones:
-            symbol = pos['symbol']
-            precio_actual = obtener_precio_actual(symbol)
-
-            # Formatear leverage
-            leverage_display = "N/A"
-            if 'leverage' in pos and pos['leverage'] is not None:
-                try:
-                    # Si es un diccionario con 'type' y 'value'
-                    if isinstance(pos['leverage'], dict) and 'value' in pos['leverage']:
-                        leverage_value = pos['leverage']['value']
-                        leverage_display = f"{leverage_value}x"
-                    # Si es un valor numérico directo
-                    elif isinstance(pos['leverage'], (int, float, str)):
-                        leverage_display = f"{pos['leverage']}x"
-                except Exception as e:
-                    print(f"Error procesando leverage para {symbol}: {e}")
-            
-            # Inicializar entry_price_display siempre primero
-            entry_price_display = pos['entryPrice']
-            
-            # Añadir info de DCA si existe
-            dca_badge = ""
-            has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
-            
-            if has_dca:
-                num_dca = dca_info[symbol]["num_entradas"]
-                dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
+        # Posiciones abiertas - Todos los títulos ahora tienen el mismo tamaño
+        st.markdown("<h3>Posiciones Abiertas</h3>", unsafe_allow_html=True)
+        
+        if not posiciones:
+            st.info("🧙‍♂️ No hay operaciones abiertas.")
+        else:
+            # Crear datos para la tabla
+            data = []
+            for pos in posiciones:
+                symbol = pos['symbol']
+                precio_actual = obtener_precio_actual(symbol)
+        
+                # Formatear leverage
+                leverage_display = "N/A"
+                if 'leverage' in pos and pos['leverage'] is not None:
+                    try:
+                        # Si es un diccionario con 'type' y 'value'
+                        if isinstance(pos['leverage'], dict) and 'value' in pos['leverage']:
+                            leverage_value = pos['leverage']['value']
+                            leverage_display = f"{leverage_value}x"
+                        # Si es un valor numérico directo
+                        elif isinstance(pos['leverage'], (int, float, str)):
+                            leverage_display = f"{pos['leverage']}x"
+                    except Exception as e:
+                        print(f"Error procesando leverage para {symbol}: {e}")
                 
-                # Si hay entradas DCA, usar el precio promedio 
-                if "precio_promedio" in dca_info[symbol] and dca_info[symbol]["precio_promedio"]:
-                    entry_price_display = dca_info[symbol]["precio_promedio"]
+                # Inicializar entry_price_display siempre primero
+                entry_price_display = pos['entryPrice']
+                
+                # Añadir info de DCA si existe
+                dca_badge = ""
+                has_dca = symbol in dca_info and dca_info[symbol]["num_entradas"] > 0
+                
+                # Calcular valor de la posición
+                position_value = "N/A"
+                if precio_actual:
+                    if has_dca and "total_size" in dca_info[symbol]:
+                        # Usar el tamaño total después de DCAs si está disponible
+                        position_value = dca_info[symbol]["total_size"] * precio_actual
+                    else:
+                        # Usar el tamaño actual de la posición
+                        position_value = pos['size'] * precio_actual
+                    
+                    # Formatear con 2 decimales
+                    position_value = f"{position_value:.2f}"
+                
+                if has_dca:
+                    num_dca = dca_info[symbol]["num_entradas"]
+                    dca_badge = f'<span class="dca-badge">DCA×{num_dca}</span>'
+                    
+                    # Si hay entradas DCA, usar el precio promedio 
+                    if "precio_promedio" in dca_info[symbol] and dca_info[symbol]["precio_promedio"]:
+                        entry_price_display = dca_info[symbol]["precio_promedio"]
+                
+                # Formatear PnL
+                pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
+                
+                # Calcular el PNL en porcentaje
+                pnl_percentage = 0
+                if entry_price_display > 0 and precio_actual:
+                    if pos['direction'] == "LONG":
+                        pnl_percentage = ((precio_actual / entry_price_display) - 1) * 100
+                    else:  # SHORT
+                        pnl_percentage = ((entry_price_display / precio_actual) - 1) * 100
+                
+                # Formatear PnL en dólares y porcentaje
+                pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f} ({pnl_percentage:.2f}%)</span>"
+                
+                # Formatear liquidación
+                liq = "N/A"
+                if pos.get('liquidation_price'):
+                    liq = f"{pos['liquidation_price']:.5f}"
+                
+                # Obtener nivel de TP
+                tp_price = niveles_tp.get(symbol, "N/A")
+                
+                # Obtener hora de apertura desde tp_orders.json
+                tiempo_info = tiempos_apertura.get(symbol, {"apertura": "N/A", "ultimo_dca": "N/A"})
+                hora_apertura = tiempo_info["apertura"]
+                ultimo_dca = tiempo_info["ultimo_dca"]
+                
+                # Formatear columna de tiempo dependiendo si tiene DCA o no
+                if has_dca and ultimo_dca != "N/A":
+                    tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
+                else:
+                    tiempo_display = hora_apertura
+                      
+                data.append({
+                    "Símbolo": f"{symbol} {dca_badge}",
+                    "Leverage": leverage_display,
+                    "Dirección": pos['direction'],
+                    "Tamaño": (
+                        f"{pos['size']:.6f}" if symbol == "BTC"
+                        else f"{pos['size']:.4f}" if symbol in ("ETH", "BNB", "SOL", "AVAX", "LINK")
+                        else f"{pos['size']:.2f}"
+                    ),
+                    "Precio Entrada": f"{entry_price_display:.5f}",
+                    "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
+                    "Valor Pos. $": position_value,  # Nueva columna con el valor de la posición
+                    "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
+                    "Hora Apertura": tiempo_display,
+                    "PnL": pnl_formatted,
+                })
             
-            # Formatear PnL
-            pnl_class = "profit" if pos['unrealizedPnl'] > 0 else ("loss" if pos['unrealizedPnl'] < 0 else "")
+            # Convertir a DataFrame
+            df = pd.DataFrame(data)
             
-            # Calcular el PNL en porcentaje
-            pnl_percentage = 0
-            if entry_price_display > 0 and precio_actual:
-                if pos['direction'] == "LONG":
-                    pnl_percentage = ((precio_actual / entry_price_display) - 1) * 100
-                else:  # SHORT
-                    pnl_percentage = ((entry_price_display / precio_actual) - 1) * 100
-            
-            # Formatear PnL en dólares y porcentaje
-            pnl_formatted = f"<span class='{pnl_class}'>{pos['unrealizedPnl']:.2f} ({pnl_percentage:.2f}%)</span>"
-            
-            # Formatear liquidación
-            liq = "N/A"
-            if pos.get('liquidation_price'):
-                liq = f"{pos['liquidation_price']:.5f}"
-            
-            # Obtener nivel de TP
-            tp_price = niveles_tp.get(symbol, "N/A")
-            
-            # Obtener hora de apertura desde tp_orders.json
-            tiempo_info = tiempos_apertura.get(symbol, {"apertura": "N/A", "ultimo_dca": "N/A"})
-            hora_apertura = tiempo_info["apertura"]
-            ultimo_dca = tiempo_info["ultimo_dca"]
-            
-            # Formatear columna de tiempo dependiendo si tiene DCA o no
-            if has_dca and ultimo_dca != "N/A":
-                tiempo_display = f"{hora_apertura} <span class='dca-time'>DCA: {ultimo_dca}</span>"
-            else:
-                tiempo_display = hora_apertura
-                  
-            data.append({
-                "Símbolo": f"{symbol} {dca_badge}",
-                "Leverage": leverage_display,  # NUEVO
-                "Dirección": pos['direction'],
-                "Tamaño": (
-                    f"{pos['size']:.6f}" if symbol == "BTC"
-                    else f"{pos['size']:.4f}" if symbol in ("ETH", "BNB", "SOL", "AVAX", "LINK")
-                    else f"{pos['size']:.2f}"
-                ),
-                "Precio Entrada": f"{entry_price_display:.5f}",
-                "Precio Actual": f"{precio_actual:.5f}" if precio_actual else "N/A",
-                "Take Profit": f"{float(tp_price):.5f}" if tp_price != "N/A" else "N/A",
-                "Hora Apertura": tiempo_display,
-                "PnL": pnl_formatted,
-            })
-        
-        # Convertir a DataFrame
-        df = pd.DataFrame(data)
-        
-        # Mostrar tabla
-        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+            # Mostrar tabla
+            st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
         
         # Botones para cerrar posiciones en una sola fila
         st.markdown("<h3>Cerrar posiciones</h3>", unsafe_allow_html=True)
